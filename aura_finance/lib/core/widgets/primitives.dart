@@ -269,6 +269,11 @@ class Motion {
   static const expo = Curves.easeOutExpo;
   static const back = Curves.easeOutBack;
 
+  /// Durasi & kurva entrance ala GSAP (`duration: 1, ease: 'power3.out'`).
+  /// Expo terlalu cepat terasa selesai (90% gerak di sepertiga awal), quart lebih "mengalir".
+  static const enter = Duration(milliseconds: 1000);
+  static const power3 = Curves.easeOutQuart;
+
   static bool reduced(BuildContext context) => MediaQuery.maybeDisableAnimationsOf(context) ?? false;
 }
 
@@ -276,18 +281,18 @@ extension StaggerX on Widget {
   /// Entrance standar: naik + fade + sedikit membesar, dengan jeda bertingkat per indeks.
   /// Jeda dibatasi [_maxSteps] langkah: item yang baru dibangun saat daftar digulir
   /// langsung beranimasi, tidak menunggu antrean indeksnya.
-  Widget staggerIn(int index, {int stepMs = 45, int baseMs = 0}) =>
+  Widget staggerIn(int index, {int stepMs = 90, int baseMs = 0}) =>
       _StaggerIn(delay: baseMs + math.min(index, _maxSteps) * stepMs, child: this);
 
   /// Muncul membal (scale + fade) — untuk centang, lencana, dan elemen kecil.
   Widget popIn({int delayMs = 0}) => _PopIn(delay: delayMs, child: this);
 
   /// Masuk dari samping (mis. item daftar), bertingkat per indeks.
-  Widget slideInX(int index, {double dx = 28, int stepMs = 40}) =>
+  Widget slideInX(int index, {double dx = 60, int stepMs = 70}) =>
       _StaggerIn(delay: math.min(index, _maxSteps) * stepMs, dx: dx, dy: 0, child: this);
 
   /// Muncul saat masuk layar (seperti GSAP ScrollTrigger), bukan saat dibangun.
-  Widget reveal({int delayMs = 0, double dy = 40, double scale = 0.94}) =>
+  Widget reveal({int delayMs = 0, double dy = 80, double scale = 0.9}) =>
       ScrollReveal(delayMs: delayMs, dy: dy, scale: scale, child: this);
 
   /// Kilau cahaya yang menyapu sekali (kartu, lencana).
@@ -300,7 +305,7 @@ const _maxSteps = 8;
 /// Animasi dipicu posisi scroll: mulai saat bagian atas elemen melewati
 /// [trigger] × tinggi layar (default 92%), lalu tidak diulang.
 class ScrollReveal extends StatefulWidget {
-  const ScrollReveal({super.key, required this.child, this.delayMs = 0, this.dy = 40, this.scale = 0.94, this.trigger = 0.92});
+  const ScrollReveal({super.key, required this.child, this.delayMs = 0, this.dy = 80, this.scale = 0.9, this.trigger = 0.9});
   final Widget child;
   final int delayMs;
   final double dy;
@@ -312,8 +317,8 @@ class ScrollReveal extends StatefulWidget {
 }
 
 class _ScrollRevealState extends State<ScrollReveal> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 820));
-  late final Animation<double> _a = CurvedAnimation(parent: _c, curve: Curves.easeOutExpo);
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100));
+  late final Animation<double> _a = CurvedAnimation(parent: _c, curve: Motion.power3);
   ScrollPosition? _pos;
   bool _fired = false;
 
@@ -427,7 +432,7 @@ class ScrollParallax extends StatelessWidget {
 /// Teks yang muncul per huruf (seperti GSAP SplitText): tiap huruf naik,
 /// sedikit berputar dan memudar masuk secara bertingkat.
 class SplitReveal extends StatefulWidget {
-  const SplitReveal(this.text, {super.key, this.style, this.delayMs = 0, this.stepMs = 28, this.maxLines = 1});
+  const SplitReveal(this.text, {super.key, this.style, this.delayMs = 0, this.stepMs = 45, this.maxLines = 1});
   final String text;
   final TextStyle? style;
   final int delayMs;
@@ -439,7 +444,7 @@ class SplitReveal extends StatefulWidget {
 }
 
 class _SplitRevealState extends State<SplitReveal> with SingleTickerProviderStateMixin {
-  static const _charMs = 520;
+  static const _charMs = 800;
   late final String _text = widget.text;
   late final List<String> _chars = _text.characters.toList();
   late final AnimationController _c = AnimationController(
@@ -507,8 +512,8 @@ class _SplitChar extends StatelessWidget {
     return Opacity(
       opacity: Curves.easeOut.transform(t),
       child: Transform.translate(
-        offset: Offset(0, 16 * (1 - e)),
-        child: Transform.rotate(angle: 0.3 * (1 - e), alignment: Alignment.bottomLeft, child: Text(ch, style: style)),
+        offset: Offset(0, 30 * (1 - e)),
+        child: Transform.rotate(angle: 0.45 * (1 - e), alignment: Alignment.bottomLeft, child: Text(ch, style: style)),
       ),
     );
   }
@@ -643,7 +648,7 @@ class _PopIn extends StatefulWidget {
 }
 
 class _PopInState extends State<_PopIn> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 520));
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
   bool _started = false;
 
   @override
@@ -681,7 +686,7 @@ class _PopInState extends State<_PopIn> with SingleTickerProviderStateMixin {
 }
 
 class _StaggerIn extends StatefulWidget {
-  const _StaggerIn({required this.delay, required this.child, this.dx = 0, this.dy = 18});
+  const _StaggerIn({required this.delay, required this.child, this.dx = 0, this.dy = 56});
   final int delay;
   final double dx;
   final double dy;
@@ -692,21 +697,26 @@ class _StaggerIn extends StatefulWidget {
 }
 
 class _StaggerInState extends State<_StaggerIn> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 680));
-  late final Animation<double> _a = CurvedAnimation(parent: _c, curve: Curves.easeOutExpo);
-  bool _started = false;
+  late final AnimationController _c = AnimationController(vsync: this, duration: Motion.enter);
+  late final Animation<double> _a = CurvedAnimation(parent: _c, curve: Motion.power3);
+  bool? _active;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_started) return;
-    _started = true;
+    // Tab (IndexedStack) & halaman di bawah rute lain dimatikan lewat TickerMode.
+    // Saat aktif lagi, entrance diputar ulang — seperti timeline GSAP yang di-restart.
+    final active = TickerMode.valuesOf(context).enabled;
+    if (active == _active) return;
+    _active = active;
+    if (!active) return;
     if (Motion.reduced(context)) {
       _c.value = 1;
       return;
     }
+    _c.value = 0;
     Future.delayed(Duration(milliseconds: widget.delay), () {
-      if (mounted) _c.forward();
+      if (mounted && _active == true) _c.forward();
     });
   }
 
@@ -724,10 +734,10 @@ class _StaggerInState extends State<_StaggerIn> with SingleTickerProviderStateMi
       builder: (context, child) {
         final t = _a.value;
         return Opacity(
-          opacity: t.clamp(0, 1),
+          opacity: Curves.easeOut.transform(t.clamp(0, 1)),
           child: Transform.translate(
             offset: Offset(widget.dx * (1 - t), widget.dy * (1 - t)),
-            child: Transform.scale(scale: 0.96 + 0.04 * t, child: child),
+            child: Transform.scale(scale: 0.92 + 0.08 * t, child: child),
           ),
         );
       },

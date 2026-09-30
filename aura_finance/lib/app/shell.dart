@@ -188,8 +188,8 @@ class _TabTransition extends StatefulWidget {
 }
 
 class _TabTransitionState extends State<_TabTransition> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 460), value: 1);
-  late final Animation<double> _a = CurvedAnimation(parent: _c, curve: Curves.easeOutExpo);
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 750), value: 1);
+  late final Animation<double> _a = CurvedAnimation(parent: _c, curve: Motion.power3);
 
   @override
   void didUpdateWidget(_TabTransition old) {
@@ -210,10 +210,11 @@ class _TabTransitionState extends State<_TabTransition> with SingleTickerProvide
         builder: (context, child) {
           final t = _a.value;
           return Opacity(
-            opacity: 0.2 + 0.8 * t,
+            // Isi tab ikut memutar ulang entrance-nya sendiri, jadi fade di sini cukup ringan.
+            opacity: 0.3 + 0.7 * t,
             child: Transform.translate(
-              offset: Offset(0, 14 * (1 - t)),
-              child: Transform.scale(scale: 0.985 + 0.015 * t, child: child),
+              offset: Offset(0, 40 * (1 - t)),
+              child: Transform.scale(scale: 0.96 + 0.04 * t, child: child),
             ),
           );
         },

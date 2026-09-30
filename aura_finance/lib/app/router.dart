@@ -64,18 +64,18 @@ Page<void> _fade(GoRouterState s, Widget child) => CustomTransitionPage(
 Page<void> _slide(GoRouterState s, Widget child) => CustomTransitionPage(
       key: s.pageKey,
       child: child,
-      transitionDuration: const Duration(milliseconds: 420),
-      reverseTransitionDuration: const Duration(milliseconds: 320),
+      transitionDuration: const Duration(milliseconds: 650),
+      reverseTransitionDuration: const Duration(milliseconds: 380),
       transitionsBuilder: (c, a, sa, child) {
         if (MediaQuery.maybeDisableAnimationsOf(c) ?? false) return FadeTransition(opacity: a, child: child);
-        final inCurve = CurvedAnimation(parent: a, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
+        final inCurve = CurvedAnimation(parent: a, curve: Curves.easeOutQuart, reverseCurve: Curves.easeInCubic);
         final outCurve = CurvedAnimation(parent: sa, curve: Curves.easeOutCubic);
         return SlideTransition(
-          position: Tween(begin: const Offset(0, 0), end: const Offset(-0.08, 0)).animate(outCurve),
+          position: Tween(begin: const Offset(0, 0), end: const Offset(-0.15, 0)).animate(outCurve),
           child: FadeTransition(
             opacity: inCurve,
             child: SlideTransition(
-              position: Tween(begin: const Offset(0.12, 0), end: Offset.zero).animate(inCurve),
+              position: Tween(begin: const Offset(0.3, 0), end: Offset.zero).animate(inCurve),
               child: child,
             ),
           ),

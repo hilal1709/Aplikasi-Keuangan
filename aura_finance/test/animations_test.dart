@@ -81,11 +81,28 @@ void main() {
 
   testWidgets('staggerIn: jeda dibatasi walau indeks besar', (t) async {
     await t.pumpWidget(_app(Scaffold(body: const Text('Item 90').staggerIn(90))));
-    // 8 langkah × 45ms + 680ms animasi — jauh di bawah 90 × 45ms.
-    await t.pump(const Duration(milliseconds: 400));
-    await t.pump(const Duration(milliseconds: 700));
+    // 8 langkah × 90ms + 1000ms animasi — jauh di bawah 90 × 90ms.
+    await t.pump(const Duration(milliseconds: 800));
+    await t.pump(const Duration(milliseconds: 1000));
     final opacity = find.ancestor(of: find.text('Item 90'), matching: find.byType(Opacity)).first;
     expect(t.widget<Opacity>(opacity).opacity, 1);
+  });
+
+  testWidgets('staggerIn diputar ulang saat tab aktif lagi (TickerMode)', (t) async {
+    Widget tab(bool on) => _app(Scaffold(body: TickerMode(enabled: on, child: const Text('Isi tab').staggerIn(0))));
+    Opacity op() => t.widget<Opacity>(find.ancestor(of: find.text('Isi tab'), matching: find.byType(Opacity)).first);
+
+    await t.pumpWidget(tab(true));
+    await t.pumpAndSettle();
+    expect(op().opacity, 1);
+
+    await t.pumpWidget(tab(false));
+    await t.pump();
+    await t.pumpWidget(tab(true));
+    await t.pump();
+    expect(op().opacity, lessThan(0.1));
+    await t.pumpAndSettle();
+    expect(op().opacity, 1);
   });
 
   testWidgets('Form sheet: isi mengalir masuk, sorot fokus & goyang', (t) async {
