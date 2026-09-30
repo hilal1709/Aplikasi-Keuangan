@@ -1,7 +1,8 @@
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+
+import 'clay.dart' show softOval;
 
 /// Avatar ilustrasi kartun bergaya clay. Disimpan sebagai kunci string
 /// (`avatar_1` …) supaya bisa disinkronkan ke profil tanpa mengunggah foto.
@@ -115,11 +116,11 @@ class _AvatarPainter extends CustomPainter {
         ).createShader(b),
     );
     if (gloss) {
-      c.drawOval(
-        Rect.fromCenter(center: Offset(b.left + b.width * 0.3, b.top + b.height * 0.22), width: b.width * 0.22, height: b.height * 0.1),
-        Paint()
-          ..color = Colors.white.withValues(alpha: 0.4)
-          ..maskFilter = ui.MaskFilter.blur(BlurStyle.normal, b.shortestSide * 0.03 + 0.5),
+      softOval(
+        c,
+        Rect.fromCenter(center: Offset(b.left + b.width * 0.3, b.top + b.height * 0.22), width: b.width * 0.22, height: b.height * 0.1)
+            .inflate(b.shortestSide * 0.03 + 0.5),
+        Colors.white.withValues(alpha: 0.55),
       );
     }
   }
@@ -255,11 +256,9 @@ class _AvatarPainter extends CustomPainter {
     final shine = Paint()..color = Colors.white;
     c.drawCircle(const Offset(42.8, 48), 0.9, shine);
     c.drawCircle(const Offset(58.8, 48), 0.9, shine);
-    final blush = Paint()
-      ..color = const Color(0xFFFE7FB2).withValues(alpha: 0.35)
-      ..maskFilter = const ui.MaskFilter.blur(BlurStyle.normal, 2);
-    c.drawOval(Rect.fromCenter(center: const Offset(36, 56), width: 8, height: 4.5), blush);
-    c.drawOval(Rect.fromCenter(center: const Offset(64, 56), width: 8, height: 4.5), blush);
+    const blush = Color(0x59FE7FB2);
+    softOval(c, Rect.fromCenter(center: const Offset(36, 56), width: 12, height: 8.5), blush);
+    softOval(c, Rect.fromCenter(center: const Offset(64, 56), width: 12, height: 8.5), blush);
     final smile = Paint()
       ..color = beard ? const Color(0xFFF7D4BC) : const Color(0xFF7A3B45)
       ..style = PaintingStyle.stroke

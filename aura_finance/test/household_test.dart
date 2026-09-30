@@ -155,4 +155,45 @@ void main() {
       expect((await db.watchGoalsWithSaved().first).single.$1.name, 'Versi lokal');
     });
   });
+
+  group('keluar / dikeluarkan dari rumah tangga', () {
+    test('salinan lokal rumah tangga dilepas seluruhnya, rumah tangga lain tidak tersentuh', () async {
+      SharedPreferences.setMockInitialValues({'sync_mark_wallets_h1': '2026-10-01T00:00:00Z'});
+      final prefs = await SharedPreferences.getInstance();
+      final engine = SyncEngine(db, prefs);
+      await wallet('w1');
+      await wallet('w2');
+      await db.customUpdate("UPDATE wallets SET household_id = 'h1' WHERE id = 'w1'");
+      await db.customUpdate("UPDATE wallets SET household_id = 'h2' WHERE id = 'w2'");
+      await db.upsertTx(TxEntriesCompanion.insert(id: 't', kind: TxKind.expense, amount: 1000, walletId: 'w1', occurredAt: DateTime.now()));
+      await db.customUpdate("UPDATE tx_entries SET household_id = 'h1' WHERE id = 't'");
+      await db.into(db.members).insert(MembersCompanion.insert(userId: 'aku', householdId: 'h1', displayName: 'Aku', role: 'member'));
+      expect(await engine.isMember('h1', 'aku'), isTrue);
+
+      // Baris kotor (belum terkirim) pun ikut dibuang: akses ke server sudah tidak ada.
+      await engine.forgetHousehold('h1', pushFirst: false, force: true);
+
+      expect((await db.select(db.wallets).get()).map((w) => w.id), ['w2']);
+      expect(await db.select(db.txEntries).get(), isEmpty);
+      expect(await engine.isMember('h1', 'aku'), isFalse);
+      expect(prefs.getString('sync_mark_wallets_h1'), isNull);
+    });
+  });
+
+  group('pulihkan akun setelah install ulang', () {
+    test('dompet onboarding yang belum dipakai dibuang, yang sudah dipakai dipertahankan', () async {
+      SharedPreferences.setMockInitialValues({});
+      final engine = SyncEngine(db, await SharedPreferences.getInstance());
+      await wallet('onboarding');
+      await wallet('dipakai');
+      await wallet('milik-rumah-tangga');
+      await db.customUpdate("UPDATE wallets SET household_id = 'h1' WHERE id = 'milik-rumah-tangga'");
+      await db.upsertTx(TxEntriesCompanion.insert(id: 't', kind: TxKind.expense, amount: 1000, walletId: 'dipakai', occurredAt: DateTime.now()));
+
+      await engine.discardUnusedLocalWallets();
+
+      final ids = (await db.select(db.wallets).get()).map((w) => w.id).toSet();
+      expect(ids, {'dipakai', 'milik-rumah-tangga'});
+    });
+  });
 }

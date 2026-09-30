@@ -54,6 +54,9 @@ class MoneyText extends StatelessWidget {
         animation: anim,
         child: child,
         builder: (context, child) {
+          // Filter blur & opacity hanya dipasang selama transisi: lapisan offscreen
+          // yang selalu ada membuat setiap angka rupiah mahal digambar tiap frame.
+          if (anim.value >= 1) return child!;
           final sigma = (1 - anim.value) * 8;
           return Opacity(
             opacity: anim.value,
@@ -281,7 +284,7 @@ extension StaggerX on Widget {
   /// Entrance standar: naik + fade + sedikit membesar, dengan jeda bertingkat per indeks.
   /// Jeda dibatasi [_maxSteps] langkah: item yang baru dibangun saat daftar digulir
   /// langsung beranimasi, tidak menunggu antrean indeksnya.
-  Widget staggerIn(int index, {int stepMs = 90, int baseMs = 0}) =>
+  Widget staggerIn(int index, {int stepMs = 70, int baseMs = 0}) =>
       _StaggerIn(delay: baseMs + math.min(index, _maxSteps) * stepMs, child: this);
 
   /// Muncul membal (scale + fade) — untuk centang, lencana, dan elemen kecil.
@@ -300,7 +303,7 @@ extension StaggerX on Widget {
       _Shimmer(delayMs: delayMs, color: color, radius: radius, child: this);
 }
 
-const _maxSteps = 8;
+const _maxSteps = 6;
 
 /// Animasi dipicu posisi scroll: mulai saat bagian atas elemen melewati
 /// [trigger] × tinggi layar (default 92%), lalu tidak diulang.

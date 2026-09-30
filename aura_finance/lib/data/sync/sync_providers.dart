@@ -5,9 +5,11 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/utils/rupiah.dart';
+import '../../core/widgets/feedback.dart';
 import '../../services/realtime.dart';
 import '../local/database.dart';
 import '../providers.dart';
+import '../remote/household_service.dart';
 import '../remote/neon.dart';
 import 'sync_engine.dart';
 
@@ -124,15 +126,20 @@ class SyncController extends Notifier<SyncState> {
     state = state.copyWith(status: SyncStatus.syncing);
     try {
       var only = tables;
+      var full = false;
       do {
         _again = false;
         final report = await engine.push(hid);
         // Sinyal dikirim segera setelah data sampai di server, tidak menunggu tarikan.
         if (report.pushed > 0) unawaited(_announce(report));
         await engine.pull(hid, tables: only);
+        full = full || only == null;
         only = null; // putaran ulang selalu menarik semua
       } while (_again);
       state = state.copyWith(status: SyncStatus.idle, lastSync: DateTime.now());
+      // Dikeluarkan pemilik dari HP lain: daftar anggota tidak lagi memuat kita.
+      final me = Neon.auth.currentUser?.id;
+      if (full && me != null && !await engine.isMember(hid, me)) await _removed(hid);
     } catch (e) {
       final s = e.toString();
       final offline = s.contains('SocketException') || s.contains('host lookup') || s.contains('ClientException');
@@ -140,6 +147,19 @@ class SyncController extends Notifier<SyncState> {
     } finally {
       _running = false;
     }
+  }
+
+  Future<void> _removed(String hid) async {
+    String? name;
+    try {
+      name = (await ref.read(householdServiceProvider).current())?.name;
+    } catch (_) {}
+    await ref.read(householdServiceProvider).detach(hid);
+    AuraToast.global(
+      title: 'Kamu tidak lagi menjadi anggota',
+      message: 'Pemilik mengeluarkanmu dari ${name ?? 'rumah tangga'}. Datanya sudah dilepas dari HP ini.',
+      tone: AuraTone.warning,
+    );
   }
 
   /// Setelah perubahan lokal terkirim: kabari anggota lain.

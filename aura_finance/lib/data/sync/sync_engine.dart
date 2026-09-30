@@ -265,6 +265,57 @@ class SyncEngine {
     return out;
   }
 
+  /// Melepas rumah tangga dari perangkat ini: perubahan yang belum terkirim dikirim dulu,
+  /// lalu salinan lokalnya dihapus (data di server tetap utuh) dan tanda tarik direset.
+  /// [pushFirst] false & [force] true dipakai setelah keluar/dikeluarkan: akses ke server
+  /// sudah tidak ada, jadi semua salinan lokal rumah tangga itu dibuang.
+  Future<void> forgetHousehold(String householdId, {bool pushFirst = true, bool force = false}) async {
+    if (pushFirst) await push(householdId);
+    await db.transaction(() async {
+      // Anak dulu baru induk (kebalikan urutan sinkron).
+      for (final s in syncSpecs(db).reversed) {
+        await db.customUpdate(
+          'DELETE FROM ${s.local.actualTableName} WHERE household_id = ?${force ? '' : ' AND dirty = 0'}',
+          variables: [Variable.withString(householdId)],
+          updates: {s.local},
+          updateKind: UpdateKind.delete,
+        );
+      }
+      await (db.delete(db.members)..where((m) => m.householdId.equals(householdId))).go();
+    });
+    await clearMarks(householdId);
+  }
+
+  /// Apakah [userId] masih tercatat sebagai anggota (menurut daftar anggota yang terakhir ditarik).
+  /// Setelah dikeluarkan, RLS membuat daftar anggota kosong bagi orang itu.
+  Future<bool> isMember(String householdId, String userId) async {
+    final row = await (db.select(db.members)..where((m) => m.householdId.equals(householdId) & m.userId.equals(userId))).getSingleOrNull();
+    return row != null;
+  }
+
+  /// Menghapus tanda tarik supaya tarikan berikutnya mengambil semua data dari awal.
+  Future<void> clearMarks(String householdId) async {
+    for (final s in syncSpecs(db)) {
+      await prefs.remove(_markKey(s, householdId));
+    }
+  }
+
+  /// Dompet lokal yang belum tersambung ke rumah tangga dan belum dipakai sama sekali
+  /// (mis. dompet dari onboarding setelah install ulang). Dibuang saat memulihkan akun
+  /// supaya tidak muncul dompet ganda di samping dompet asli dari server.
+  Future<void> discardUnusedLocalWallets() async {
+    await db.customUpdate(
+      'DELETE FROM wallets WHERE household_id IS NULL '
+      'AND id NOT IN (SELECT wallet_id FROM tx_entries WHERE wallet_id IS NOT NULL) '
+      'AND id NOT IN (SELECT to_wallet_id FROM tx_entries WHERE to_wallet_id IS NOT NULL) '
+      'AND id NOT IN (SELECT wallet_id FROM bills WHERE wallet_id IS NOT NULL) '
+      'AND id NOT IN (SELECT wallet_id FROM recurring_rules WHERE wallet_id IS NOT NULL) '
+      'AND id NOT IN (SELECT wallet_id FROM goal_contributions WHERE wallet_id IS NOT NULL)',
+      updates: {db.wallets},
+      updateKind: UpdateKind.delete,
+    );
+  }
+
   /// Memberi `household_id` & `created_by` pada data yang dibuat sebelum bergabung/membuat rumah tangga.
   Future<void> adoptLocalData(String householdId, String userId) async {
     for (final s in syncSpecs(db)) {

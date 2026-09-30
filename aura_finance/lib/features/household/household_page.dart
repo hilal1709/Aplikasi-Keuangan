@@ -17,6 +17,7 @@ import '../../core/widgets/aura_page.dart';
 import '../../core/widgets/form_sheet.dart';
 import '../../core/widgets/neu_surface.dart';
 import '../../core/widgets/primitives.dart';
+import '../../data/local/database.dart';
 import '../../data/providers.dart';
 import '../../data/remote/household_service.dart';
 import '../../data/remote/neon.dart';
@@ -117,7 +118,20 @@ class _AuthFormState extends ConsumerState<_AuthForm> {
         await auth.signIn(email: _email.text.trim(), password: _password.text);
       }
       // Profil dibuat/diperbarui dari aplikasi (Neon tidak punya trigger auth.users).
-      await ref.read(householdServiceProvider).saveProfile(name.isNotEmpty ? name : _email.text.split('@').first);
+      final svc = ref.read(householdServiceProvider);
+      await svc.saveProfile(name.isNotEmpty ? name : _email.text.split('@').first);
+      // Install ulang / ganti HP: sambungkan kembali ke rumah tangga yang sudah ada di server.
+      // Bila ada lebih dari satu, pengguna memilih sendiri di layar berikutnya.
+      if (!_signUp) {
+        final restored = await svc.restoreIfSingle();
+        if (restored != null) {
+          AuraToast.global(
+            title: 'Data akunmu dipulihkan',
+            message: '${restored.household.name} · ${restored.transactions} transaksi dimuat dari server.',
+            tone: AuraTone.success,
+          );
+        }
+      }
     } on NeonAuthException catch (e) {
       if (mounted) {
         AuraToast.error(context, _friendlyError(e));
@@ -222,6 +236,7 @@ class _CreateOrJoinState extends ConsumerState<_CreateOrJoin> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const _SavedHouseholds(title: 'Data di akunmu', hint: 'Pulihkan catatan yang tersimpan di server'),
         const Center(child: ClayArt(ClayKind.house, size: 160)),
         const SizedBox(height: AuraSpace.sm),
         NeuSegmented<bool>(
@@ -261,7 +276,8 @@ class _CreateOrJoinState extends ConsumerState<_CreateOrJoin> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'Semua data yang sudah kamu catat di perangkat ini akan ikut dipindahkan ke rumah tangga baru.',
+                      'Semua data yang sudah kamu catat di perangkat ini akan ikut dipindahkan ke rumah tangga baru. '
+                      'Data baru tersimpan di server (aman saat ganti HP) setelah rumah tangga dibuat.',
                       style: AuraType.bodyMd.copyWith(color: p.onSurfaceVariant),
                     ),
                     const FieldLabel('Nama rumah tangga'),
@@ -289,6 +305,52 @@ class _UpperCase extends TextInputFormatter {
 
 class _HouseholdInfo extends ConsumerWidget {
   const _HouseholdInfo();
+
+  Future<void> _removeMember(BuildContext context, WidgetRef ref, Member m) async {
+    final ok = await confirmDelete(
+      context,
+      title: 'Keluarkan ${m.displayName}?',
+      message: '${m.displayName} tidak bisa lagi melihat atau mengubah data rumah tangga ini, dan datanya dilepas dari HP-nya. '
+          'Catatan yang sudah ia buat tetap tersimpan di sini. Ia bisa bergabung lagi dengan kode undangan.',
+      confirmLabel: 'Keluarkan',
+    );
+    if (!ok) return;
+    try {
+      await ref.read(householdServiceProvider).removeMember(m.userId);
+      HapticFeedback.mediumImpact();
+      AuraToast.global(title: '${m.displayName} dikeluarkan', tone: AuraTone.warning);
+    } catch (e) {
+      if (context.mounted) AuraToast.error(context, _friendlyError(e));
+    }
+  }
+
+  Future<void> _leave(BuildContext context, WidgetRef ref, String name, List<Member> members, String? me) async {
+    final others = members.where((m) => m.userId != me).toList();
+    final isOwner = members.any((m) => m.userId == me && m.role == 'owner');
+    final ok = await confirmDelete(
+      context,
+      title: others.isEmpty ? 'Hapus $name?' : 'Keluar dari $name?',
+      message: others.isEmpty
+          ? 'Kamu anggota terakhir. Rumah tangga ini beserta SELURUH datanya (dompet, transaksi, target, tagihan) '
+              'akan dihapus permanen dari server dan tidak bisa dipulihkan.'
+          : 'Data rumah tangga tetap tersimpan untuk ${others.map((m) => m.displayName).join(', ')}, '
+              'tetapi dilepas dari HP ini dan kamu tidak bisa melihatnya lagi.'
+              '${isOwner ? ' Kepemilikan dipindahkan ke ${others.first.displayName}.' : ''}',
+      confirmLabel: others.isEmpty ? 'Hapus permanen' : 'Keluar',
+    );
+    if (!ok) return;
+    try {
+      final deleted = await ref.read(householdServiceProvider).leave();
+      HapticFeedback.heavyImpact();
+      AuraToast.global(
+        title: deleted ? '$name dihapus' : 'Kamu keluar dari $name',
+        message: 'Buat rumah tangga baru, gabung dengan kode, atau pulihkan yang lain dari akunmu.',
+        tone: AuraTone.warning,
+      );
+    } catch (e) {
+      if (context.mounted) AuraToast.error(context, _friendlyError(e));
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -370,6 +432,10 @@ class _HouseholdInfo extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: AuraSpace.lg),
+        const _SavedHouseholds(
+          title: 'Rumah tangga lain di akunmu',
+          hint: 'Data lama setelah install ulang ada di sini — pindah untuk memulihkannya',
+        ),
         const SectionHeader('Anggota'),
         const SizedBox(height: AuraSpace.sm + 4),
         for (final (i, m) in members.indexed)
@@ -384,6 +450,16 @@ class _HouseholdInfo extends ConsumerWidget {
                   const SizedBox(width: 12),
                   Expanded(child: Text(m.userId == me ? '${m.displayName} (kamu)' : m.displayName, style: AuraType.labelLg.copyWith(color: p.onSurface))),
                   Text(m.role == 'owner' ? 'Pemilik' : 'Anggota', style: AuraType.labelSm.copyWith(color: p.outline)),
+                  if (isOwner && m.userId != me) ...[
+                    const SizedBox(width: 8),
+                    NeuIconButton(
+                      HugeIcons.strokeRoundedUserRemove01,
+                      size: 36,
+                      color: p.error,
+                      label: 'Keluarkan ${m.displayName}',
+                      onTap: () => _removeMember(context, ref, m),
+                    ),
+                  ],
                 ],
               ),
             ).staggerIn(i),
@@ -431,6 +507,11 @@ class _HouseholdInfo extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: AuraSpace.lg),
+        PrimaryAction(
+          label: 'Keluar dari rumah tangga',
+          destructive: true,
+          onPressed: () => _leave(context, ref, h.value?.name ?? 'rumah tangga ini', members, me),
+        ),
         PrimaryAction(
           label: 'Keluar akun',
           destructive: true,
@@ -667,6 +748,98 @@ class _NotificationCardState extends ConsumerState<_NotificationCard> with Widge
                 onPressed: () => ref.read(realtimeProvider.notifier).openNotificationSettings(),
                 child: const Text('Buka pengaturan notifikasi'),
               ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Rumah tangga milik akun ini yang tersimpan di server. Setelah install ulang atau
+/// ganti HP, di sinilah data lama dipulihkan; juga untuk pindah dari rumah tangga
+/// yang tidak sengaja dibuat baru.
+class _SavedHouseholds extends ConsumerStatefulWidget {
+  const _SavedHouseholds({required this.title, required this.hint});
+  final String title;
+  final String hint;
+
+  @override
+  ConsumerState<_SavedHouseholds> createState() => _SavedHouseholdsState();
+}
+
+class _SavedHouseholdsState extends ConsumerState<_SavedHouseholds> {
+  String? _busy;
+
+  Future<void> _restore(Household h) async {
+    final current = ref.read(householdIdProvider);
+    if (current != null) {
+      final ok = await showAuraModal<bool>(
+        context,
+        title: 'Pindah ke ${h.name}?',
+        message: 'Perangkat ini akan menampilkan data ${h.name}. Data rumah tangga yang sekarang tetap aman di server '
+            'dan bisa dipulihkan lagi dari sini.',
+        actions: const [AuraModalAction('Batal', value: false), AuraModalAction('Pindah', value: true, primary: true)],
+      );
+      if (ok != true || !mounted) return;
+    }
+    setState(() => _busy = h.id);
+    try {
+      await ref.read(householdServiceProvider).restore(h);
+      HapticFeedback.heavyImpact();
+      ref.invalidate(currentHouseholdProvider);
+      AuraToast.global(title: 'Data ${h.name} dipulihkan', message: 'Semua catatan dari server sudah dimuat.', tone: AuraTone.success);
+    } catch (e) {
+      if (mounted) AuraToast.error(context, _friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _busy = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.aura;
+    final current = ref.watch(householdIdProvider);
+    final list = (ref.watch(myHouseholdsProvider).value ?? const <HouseholdSummary>[])
+        .where((s) => s.household.id != current)
+        .toList();
+    if (list.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AuraSpace.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SectionHeader(widget.title, subtitle: widget.hint),
+          const SizedBox(height: AuraSpace.sm + 4),
+          for (final (i, s) in list.indexed)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: NeuSurface(
+                radius: AuraRadius.lg,
+                padding: const EdgeInsets.all(AuraSpace.md),
+                child: Row(
+                  children: [
+                    const CategoryBadge(icon: 'home', color: 0xFFFE64A3, size: 44),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(s.household.name, style: AuraType.labelLg.copyWith(color: p.onSurface)),
+                          Text(
+                            '${s.transactions} transaksi · ${s.role == 'owner' ? 'pemilik' : 'anggota'}',
+                            style: AuraType.bodySm.copyWith(color: p.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ShadButton(
+                      size: ShadButtonSize.sm,
+                      onPressed: _busy != null ? null : () => _restore(s.household),
+                      child: Text(_busy == s.household.id ? 'Memuat…' : (current == null ? 'Pulihkan' : 'Pindah')),
+                    ),
+                  ],
+                ),
+              ).staggerIn(i),
             ),
         ],
       ),

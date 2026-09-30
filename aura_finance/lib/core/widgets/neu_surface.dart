@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -69,26 +70,36 @@ class _InsetShadowPainter extends CustomPainter {
   final double amount;
   final double radius;
 
+  // Bayangan dalam digambar dengan gradien di tiap tepi (bukan blur pada path):
+  // blur Gaussian pada path bebas sangat mahal di GPU (Impeller) dan permukaan cekung
+  // ada di banyak tempat, sehingga dulu membuat setiap frame animasi tersendat.
   @override
   void paint(Canvas canvas, Size size) {
     final r = RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius.clamp(0, size.shortestSide / 2)));
+    final dark = p.shadowDark.withValues(alpha: p.shadowDark.a * 0.9 * amount);
+    final light = p.shadowLight.withValues(alpha: p.shadowLight.a * amount);
+    final w = math.min(14 * amount, size.shortestSide / 2);
+    if (w <= 0) return;
     canvas.save();
     canvas.clipRRect(r);
-    final d = 4 * amount;
-    _shadow(canvas, r, Offset(d, d), p.shadowDark.withValues(alpha: p.shadowDark.a * 0.9 * amount));
-    _shadow(canvas, r, Offset(-d, -d), p.shadowLight.withValues(alpha: p.shadowLight.a * amount));
+    // Cahaya dari kiri atas: tepi atas & kiri gelap, tepi bawah & kanan terang.
+    _band(canvas, Rect.fromLTWH(0, 0, size.width, w), Alignment.topCenter, Alignment.bottomCenter, dark);
+    _band(canvas, Rect.fromLTWH(0, 0, w, size.height), Alignment.centerLeft, Alignment.centerRight, dark);
+    _band(canvas, Rect.fromLTWH(0, size.height - w, size.width, w), Alignment.bottomCenter, Alignment.topCenter, light);
+    _band(canvas, Rect.fromLTWH(size.width - w, 0, w, size.height), Alignment.centerRight, Alignment.centerLeft, light);
     canvas.restore();
   }
 
-  void _shadow(Canvas canvas, RRect r, Offset offset, Color color) {
-    final outer = Path()..addRect(r.outerRect.inflate(40));
-    final hole = Path()..addRRect(r.shift(offset));
-    final ring = Path.combine(PathOperation.difference, outer, hole);
-    canvas.drawPath(
-      ring,
+  void _band(Canvas canvas, Rect rect, Alignment from, Alignment to, Color color) {
+    canvas.drawRect(
+      rect,
       Paint()
-        ..color = color
-        ..maskFilter = ui.MaskFilter.blur(BlurStyle.normal, 5 * amount),
+        ..shader = LinearGradient(
+          begin: from,
+          end: to,
+          colors: [color, color.withValues(alpha: color.a * 0.35), color.withValues(alpha: 0)],
+          stops: const [0, 0.35, 1],
+        ).createShader(rect),
     );
   }
 

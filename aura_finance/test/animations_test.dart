@@ -81,7 +81,7 @@ void main() {
 
   testWidgets('staggerIn: jeda dibatasi walau indeks besar', (t) async {
     await t.pumpWidget(_app(Scaffold(body: const Text('Item 90').staggerIn(90))));
-    // 8 langkah × 90ms + 1000ms animasi — jauh di bawah 90 × 90ms.
+    // 6 langkah × 70ms + 1000ms animasi — jauh di bawah 90 × 70ms.
     await t.pump(const Duration(milliseconds: 800));
     await t.pump(const Duration(milliseconds: 1000));
     final opacity = find.ancestor(of: find.text('Item 90'), matching: find.byType(Opacity)).first;

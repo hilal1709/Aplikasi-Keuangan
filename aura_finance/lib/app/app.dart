@@ -19,6 +19,8 @@ class AuraApp extends ConsumerWidget {
     final router = ref.watch(routerProvider);
     return ShadApp.router(
       title: 'Aura',
+      // Build diagnostik: --dart-define=AURA_PERF=true menampilkan grafik waktu frame UI & GPU.
+      showPerformanceOverlay: const bool.fromEnvironment('AURA_PERF'),
       routerConfig: router,
       themeMode: mode,
       theme: AppTheme.shad(AuraPalette.light),

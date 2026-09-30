@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
@@ -122,12 +121,7 @@ class _ClayPainter extends CustomPainter {
   // Kit clay
 
   void _groundShadow(Canvas c, Offset center, double w, double h) {
-    c.drawOval(
-      Rect.fromCenter(center: center, width: w * 2, height: h * 2),
-      Paint()
-        ..color = p.shadowDark.withValues(alpha: p.isDark ? 0.5 : 0.35)
-        ..maskFilter = const ui.MaskFilter.blur(BlurStyle.normal, 10),
-    );
+    softOval(c, Rect.fromCenter(center: center, width: w * 2 + 20, height: h * 2 + 20), p.shadowDark.withValues(alpha: p.isDark ? 0.5 : 0.35));
   }
 
   Color _shade(Color c, double amount) {
@@ -149,16 +143,19 @@ class _ClayPainter extends CustomPainter {
           stops: const [0, 0.5, 1],
         ).createShader(b),
     );
-    // Rim gelap lembut di sisi bawah untuk kesan volume.
+    // Rim gelap lembut di sisi bawah untuk kesan volume (gradien, bukan blur).
+    final rim = _shade(base, -0.22);
     c.save();
     c.clipPath(path);
-    c.drawPath(
-      path.shift(Offset(0, -b.height * 0.08)),
+    c.drawRect(
+      b,
       Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = b.shortestSide * 0.16
-        ..color = _shade(base, -0.22).withValues(alpha: 0.35)
-        ..maskFilter = ui.MaskFilter.blur(BlurStyle.normal, b.shortestSide * 0.08),
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [rim.withValues(alpha: 0), rim.withValues(alpha: 0), rim.withValues(alpha: 0.4)],
+          stops: const [0, 0.6, 1],
+        ).createShader(b),
     );
     c.restore();
     if (gloss) {
@@ -167,12 +164,7 @@ class _ClayPainter extends CustomPainter {
         width: b.width * 0.26 * glossScale,
         height: b.height * 0.13 * glossScale,
       );
-      c.drawOval(
-        g,
-        Paint()
-          ..color = Colors.white.withValues(alpha: 0.55)
-          ..maskFilter = ui.MaskFilter.blur(BlurStyle.normal, b.shortestSide * 0.04 + 1),
-      );
+      softOval(c, g.inflate(b.shortestSide * 0.04 + 1), Colors.white.withValues(alpha: 0.7));
     }
   }
 
@@ -197,11 +189,9 @@ class _ClayPainter extends CustomPainter {
     final paint = Paint()..color = const Color(0xFF3B2A2E);
     c.drawOval(Rect.fromCenter(center: Offset(cx - gap, cy), width: 5, height: 7), paint);
     c.drawOval(Rect.fromCenter(center: Offset(cx + gap, cy), width: 5, height: 7), paint);
-    final blushPaint = Paint()
-      ..color = rose.withValues(alpha: 0.45)
-      ..maskFilter = const ui.MaskFilter.blur(BlurStyle.normal, 3);
-    c.drawOval(Rect.fromCenter(center: Offset(cx - gap - 7, cy + 8), width: 10, height: 6), blushPaint);
-    c.drawOval(Rect.fromCenter(center: Offset(cx + gap + 7, cy + 8), width: 10, height: 6), blushPaint);
+    final blush = rose.withValues(alpha: 0.5);
+    softOval(c, Rect.fromCenter(center: Offset(cx - gap - 7, cy + 8), width: 16, height: 11), blush);
+    softOval(c, Rect.fromCenter(center: Offset(cx + gap + 7, cy + 8), width: 16, height: 11), blush);
   }
 
   double get floatA => math.sin((t + 0.25) * math.pi * 2) * 5;
@@ -395,6 +385,17 @@ class _ClayPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ClayPainter old) => old.t != t || old.kind != kind || old.p != p;
+}
+
+/// Oval lembut (pengganti oval ber-`MaskFilter.blur`): gradien radial ke transparan.
+/// Jauh lebih murah digambar GPU, penting karena ilustrasi dianimasikan tiap frame.
+void softOval(Canvas c, Rect r, Color color) {
+  c.drawOval(
+    r,
+    Paint()
+      ..shader = RadialGradient(colors: [color, color.withValues(alpha: color.a * 0.5), color.withValues(alpha: 0)], stops: const [0, 0.55, 1])
+          .createShader(r),
+  );
 }
 
 /// Empty state: ilustrasi + judul + penjelasan singkat + aksi opsional.
