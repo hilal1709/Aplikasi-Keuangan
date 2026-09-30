@@ -1,6 +1,6 @@
 # Build APK rilis setiap push tag v* (mis. v0.2.0), lalu unggah ke GitHub Releases.
 #
-# Nilai publik (URL Neon, worker, key Pusher, Beams instance) dibaca dari aura_finance/config/app.json.
+# Nilai publik (URL Neon, worker, key Pusher) dibaca dari aura_finance/config/app.json.
 # Secret yang dibutuhkan (Settings -> Secrets and variables -> Actions):
 #   KEYSTORE_BASE64    — isi aura-release.jks di-base64
 #   KEYSTORE_PASSWORD  — password keystore

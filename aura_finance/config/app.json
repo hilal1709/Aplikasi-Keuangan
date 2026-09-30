@@ -3,6 +3,5 @@
   "NEON_AUTH_URL": "https://ep-lively-term-b4qk2lr9.neonauth.c-6.us-east-2.aws.neon.tech/neondb/auth",
   "AURA_API_URL": "https://aura-api.hfinance.workers.dev",
   "PUSHER_KEY": "416e476735233df08387",
-  "PUSHER_CLUSTER": "ap1",
-  "BEAMS_INSTANCE_ID": "40fdc44f-4e58-4f6a-ad6d-9c2a47668671"
+  "PUSHER_CLUSTER": "ap1"
 }

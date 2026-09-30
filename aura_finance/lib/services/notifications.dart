@@ -49,7 +49,7 @@ class Notifications {
     await _plugin.initialize(
       settings: const InitializationSettings(android: AndroidInitializationSettings('@drawable/ic_notification')),
     );
-    // Kanal untuk push dari pasangan (dipakai FCM/Pusher Beams).
+    // Kanal untuk push dari pasangan (Firebase Cloud Messaging).
     await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.createNotificationChannel(
           const AndroidNotificationChannel('household', 'Kabar rumah tangga', description: 'Catatan, budget, target & tagihan dari anggota lain', importance: Importance.high),
         );

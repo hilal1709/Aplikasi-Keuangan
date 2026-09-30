@@ -13,18 +13,18 @@ import '../data/sync/sync_providers.dart';
 
 /// Konfigurasi realtime (nilai publik, diberikan saat build):
 /// `--dart-define=AURA_API_URL=https://aura-api.<akun>.workers.dev`
-/// `--dart-define=PUSHER_KEY=... --dart-define=PUSHER_CLUSTER=ap1 --dart-define=BEAMS_INSTANCE_ID=...`
+/// `--dart-define=PUSHER_KEY=... --dart-define=PUSHER_CLUSTER=ap1`
 abstract final class RealtimeConfig {
   static const apiUrl = String.fromEnvironment('AURA_API_URL');
   static const pusherKey = String.fromEnvironment('PUSHER_KEY');
   static const pusherCluster = String.fromEnvironment('PUSHER_CLUSTER', defaultValue: 'ap1');
-  static const beamsInstanceId = String.fromEnvironment('BEAMS_INSTANCE_ID');
 
   static bool get channelsEnabled => apiUrl.isNotEmpty && pusherKey.isNotEmpty && Neon.enabled;
-  static bool get beamsEnabled => apiUrl.isNotEmpty && beamsInstanceId.isNotEmpty && Neon.enabled;
+  /// Push notification lewat Firebase Cloud Messaging (dikirim oleh worker).
+  static bool get pushEnabled => apiUrl.isNotEmpty && Neon.enabled;
 }
 
-/// Status pendaftaran HP ini ke Pusher Beams (push saat aplikasi tertutup).
+/// Status pendaftaran HP ini untuk push notification (saat aplikasi tertutup).
 @immutable
 class PushStatus {
   const PushStatus({this.registered = false, this.error});
@@ -52,9 +52,9 @@ class PartnerEvent {
 
 /// Menghubungkan rumah tangga ke Pusher:
 /// - Channels: channel privat `private-household-<id>`; event `changed` memicu sinkron segera.
-/// - Beams: mendaftarkan HP ini sebagai user Beams agar menerima push dari pasangan.
+/// - Push: token FCM HP ini didaftarkan ke worker agar menerima push dari pasangan.
 class RealtimeController extends Notifier<bool> {
-  static const _beams = MethodChannel('aura/beams');
+  static const _push = MethodChannel('aura/push');
   final _events = StreamController<PartnerEvent>.broadcast();
   Stream<PartnerEvent> get events => _events.stream;
 
@@ -66,10 +66,7 @@ class RealtimeController extends Notifier<bool> {
     final user = ref.watch(authUserProvider).value;
     final hid = ref.watch(householdIdProvider);
     ref.onDispose(_teardown);
-    if (user == null || hid == null) {
-      if (user == null) _clearBeams();
-      return false;
-    }
+    if (user == null || hid == null) return false;
     Future.microtask(() => _connect(user.id, hid));
     return RealtimeConfig.channelsEnabled;
   }
@@ -101,44 +98,63 @@ class RealtimeController extends Notifier<bool> {
     await registerPush(userId);
   }
 
-  /// Mendaftarkan HP ini ke Pusher Beams sebagai [userId]. Hasilnya dicatat di
+  /// Mendaftarkan token FCM HP ini ke worker untuk pengguna [userId]. Hasilnya dicatat di
   /// [pushStatusProvider] supaya bisa dilihat di halaman Rumah Tangga.
   Future<void> registerPush(String userId) async {
     final status = ref.read(pushStatusProvider.notifier);
-    if (!RealtimeConfig.beamsEnabled) {
+    if (!RealtimeConfig.pushEnabled) {
       status.set(const PushStatus(error: 'Push belum dikonfigurasi di aplikasi ini'));
       return;
     }
+    String? token;
     try {
-      final started = await _beams.invokeMethod<bool>('start', {'instanceId': RealtimeConfig.beamsInstanceId});
-      if (started != true) {
-        status.set(const PushStatus(error: 'Firebase tidak aktif di aplikasi ini'));
-        return;
-      }
-      // Beams butuh token FCM dulu; bila macet di sini, tampilkan alasannya.
-      try {
-        await _beams.invokeMethod<String>('fcmToken').timeout(const Duration(seconds: 20));
-      } on TimeoutException {
-        status.set(const PushStatus(error: 'Firebase tidak merespons (cek Google Play Services & koneksi)'));
-        return;
-      } on PlatformException catch (e) {
-        status.set(PushStatus(error: 'Firebase: ${e.message ?? e.code}'));
-        return;
-      }
-      await _beams
-          .invokeMethod('setUser', {
-            'userId': userId,
-            'tokenUrl': '${RealtimeConfig.apiUrl}/beams/token',
-            'jwt': await Neon.auth.accessToken(),
-          })
-          .timeout(const Duration(seconds: 30));
-      status.set(const PushStatus(registered: true));
+      token = await _push.invokeMethod<String>('fcmToken').timeout(const Duration(seconds: 20));
     } on TimeoutException {
-      status.set(const PushStatus(error: 'Pusher Beams tidak merespons saat mendaftarkan HP'));
-    } catch (e) {
-      debugPrint('Pusher Beams gagal: $e');
-      status.set(PushStatus(error: e is PlatformException ? (e.message ?? e.code) : '$e'));
+      status.set(const PushStatus(error: 'Firebase tidak merespons (cek Google Play Services & koneksi)'));
+      return;
+    } on PlatformException catch (e) {
+      status.set(PushStatus(error: 'Firebase: ${e.message ?? e.code}'));
+      return;
     }
+    if (token == null || token.isEmpty) {
+      status.set(const PushStatus(error: 'Firebase tidak memberi token'));
+      return;
+    }
+    try {
+      final res = await http
+          .post(
+            Uri.parse('${RealtimeConfig.apiUrl}/push/register'),
+            headers: {'Authorization': 'Bearer ${await Neon.auth.accessToken()}', 'Content-Type': 'application/json'},
+            body: jsonEncode({'token': token}),
+          )
+          .timeout(const Duration(seconds: 20));
+      if (res.statusCode != 200) {
+        status.set(PushStatus(error: 'Server menolak pendaftaran (${res.statusCode})'));
+        return;
+      }
+      await ref.read(prefsProvider).setString(_kToken, token);
+      status.set(const PushStatus(registered: true));
+    } catch (e) {
+      status.set(PushStatus(error: e is TimeoutException ? 'Server tidak merespons' : 'Tidak bisa menghubungi server'));
+    }
+  }
+
+  static const _kToken = 'fcm_token';
+
+  /// Dipanggil sebelum keluar akun: HP ini berhenti menerima push untuk akun tersebut.
+  Future<void> unregisterPush() async {
+    final token = ref.read(prefsProvider).getString(_kToken);
+    if (token == null || RealtimeConfig.apiUrl.isEmpty || Neon.auth.currentUser == null) return;
+    try {
+      await http
+          .post(
+            Uri.parse('${RealtimeConfig.apiUrl}/push/unregister'),
+            headers: {'Authorization': 'Bearer ${await Neon.auth.accessToken()}', 'Content-Type': 'application/json'},
+            body: jsonEncode({'token': token}),
+          )
+          .timeout(const Duration(seconds: 10));
+    } catch (_) {}
+    await ref.read(prefsProvider).remove(_kToken);
   }
 
   /// Minta server mengirim push uji ke HP ini sendiri beberapa detik lagi,
@@ -160,7 +176,7 @@ class RealtimeController extends Notifier<bool> {
 
   Future<void> openNotificationSettings() async {
     try {
-      await _beams.invokeMethod('openNotificationSettings');
+      await _push.invokeMethod('openNotificationSettings');
     } catch (_) {}
   }
 
@@ -245,13 +261,6 @@ class RealtimeController extends Notifier<bool> {
       if (ch != null) await p.unsubscribe(channelName: ch).catchError((_) {});
       await p.disconnect().catchError((_) {});
     }
-  }
-
-  Future<void> _clearBeams() async {
-    if (!RealtimeConfig.beamsEnabled) return;
-    try {
-      await _beams.invokeMethod('clear');
-    } catch (_) {}
   }
 }
 

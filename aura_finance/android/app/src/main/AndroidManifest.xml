@@ -50,7 +50,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- Tampilan default push notification (FCM / Pusher Beams). -->
+        <!-- Tampilan default push notification (Firebase Cloud Messaging). -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@drawable/ic_notification" />

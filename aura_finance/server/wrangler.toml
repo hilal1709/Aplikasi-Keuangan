@@ -3,11 +3,16 @@ main = "src/index.js"
 compatibility_date = "2026-09-01"
 
 # Nilai publik (boleh di-commit). Secret di-set lewat `npx wrangler secret put ...`:
-#   PUSHER_SECRET, BEAMS_SECRET_KEY
+#   PUSHER_SECRET
+#   FCM_SERVICE_ACCOUNT  — isi file service account Firebase (JSON), untuk push lewat FCM
 [vars]
 NEON_AUTH_URL = "https://ep-lively-term-b4qk2lr9.neonauth.c-6.us-east-2.aws.neon.tech/neondb/auth"
 NEON_DATA_API_URL = "https://ep-lively-term-b4qk2lr9.apirest.c-6.us-east-2.aws.neon.tech/neondb/rest/v1"
 PUSHER_APP_ID = "2198619"
 PUSHER_KEY = "416e476735233df08387"
 PUSHER_CLUSTER = "ap1"
-BEAMS_INSTANCE_ID = "40fdc44f-4e58-4f6a-ad6d-9c2a47668671"
+
+# Token FCM per pengguna (push notification langsung lewat Firebase).
+[[kv_namespaces]]
+binding = "PUSH_TOKENS"
+id = "b4fae471528d49e9b0f94bad23bf14fa"

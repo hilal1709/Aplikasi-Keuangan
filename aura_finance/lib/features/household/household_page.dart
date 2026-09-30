@@ -514,7 +514,7 @@ class _SharingGuide extends StatelessWidget {
   }
 }
 
-/// Status notifikasi di luar aplikasi: izin Android + pendaftaran push (Pusher Beams),
+/// Status notifikasi di luar aplikasi: izin Android + pendaftaran push (FCM),
 /// dengan tombol untuk mengaktifkan dan mengirim notifikasi uji.
 class _NotificationCard extends ConsumerStatefulWidget {
   const _NotificationCard();

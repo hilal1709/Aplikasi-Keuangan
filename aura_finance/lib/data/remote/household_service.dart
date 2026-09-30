@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers.dart';
 import '../sync/sync_providers.dart';
 import 'neon.dart';
+import '../../services/realtime.dart';
 
 class Household {
   const Household({required this.id, required this.name, required this.inviteCode});
@@ -68,6 +69,7 @@ class HouseholdService {
   }
 
   Future<void> signOut() async {
+    await ref.read(realtimeProvider.notifier).unregisterPush();
     await Neon.auth.signOut();
   }
 }

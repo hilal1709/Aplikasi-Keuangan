@@ -47,6 +47,7 @@ android {
     buildTypes {
         release {
             signingConfig = if (keystoreProperties.isNotEmpty()) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
+            proguardFiles("proguard-rules.pro")
         }
     }
 }
@@ -59,8 +60,7 @@ kotlin {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
-    // Push notification lewat Pusher Beams (berjalan di atas Firebase Cloud Messaging).
-    implementation("com.pusher:push-notifications-android:1.10.0")
+    // Push notification lewat Firebase Cloud Messaging (dikirim oleh worker, lihat server/).
     implementation("com.google.firebase:firebase-messaging:25.1.3")
 }
 

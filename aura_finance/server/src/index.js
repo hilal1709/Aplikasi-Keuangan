@@ -2,7 +2,8 @@
 //
 // Endpoint (semuanya butuh header `Authorization: Bearer <JWT Neon Auth>`):
 //   POST /pusher/auth   {socket_id, channel_name}    -> tanda tangan channel privat Pusher
-//   GET  /beams/token?user_id=...                    -> token Pusher Beams untuk push ke user ini
+//   POST /push/register   {token}                     -> simpan token FCM HP ini untuk pengguna ini
+//   POST /push/unregister {token}                     -> hapus token (saat keluar akun)
 //   POST /notify        {household_id, kind, title, body, socket_id?, tables?, changes?}
 //        -> event realtime ke anggota lain + push notification ke HP mereka.
 //           `changes` (baris yang baru disimpan, sudah disaring pengirim) diteruskan
@@ -11,7 +12,7 @@
 // Keanggotaan rumah tangga dicek lewat Neon Data API memakai JWT pengguna,
 // jadi aturan RLS di Postgres tetap menjadi satu-satunya sumber kebenaran.
 
-import { createRemoteJWKSet, jwtVerify, SignJWT } from 'jose';
+import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from 'jose';
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
@@ -113,20 +114,91 @@ async function triggerChannel(env, channel, event, data, socketId) {
   if (!res.ok) console.log('pusher trigger failed', res.status, await res.text());
 }
 
-/** Push notification ke user tertentu lewat Pusher Beams. */
-async function publishToUsers(env, users, title, body, data) {
-  if (!users.length || !env.BEAMS_INSTANCE_ID) return;
-  const id = env.BEAMS_INSTANCE_ID;
-  const res = await fetch(`https://${id}.pushnotifications.pusher.com/publish_api/v1/instances/${id}/publishes/users`, {
+// --- Push notification langsung lewat Firebase Cloud Messaging (HTTP v1) -----------------
+//
+// Token FCM disimpan di KV: `u:<userId>` -> daftar token HP pengguna itu,
+// `t:<token>` -> userId pemiliknya (supaya satu HP hanya menerima push untuk akun yang login).
+
+const MAX_TOKENS_PER_USER = 5;
+
+async function tokensOf(env, userId) {
+  return (await env.PUSH_TOKENS.get(`u:${userId}`, 'json')) || [];
+}
+
+async function registerToken(env, userId, token) {
+  const prev = await env.PUSH_TOKENS.get(`t:${token}`);
+  if (prev && prev !== userId) {
+    // HP ini sebelumnya dipakai akun lain -> lepaskan dari akun itu.
+    const old = (await tokensOf(env, prev)).filter((t) => t !== token);
+    await env.PUSH_TOKENS.put(`u:${prev}`, JSON.stringify(old));
+  }
+  const list = [token, ...(await tokensOf(env, userId)).filter((t) => t !== token)].slice(0, MAX_TOKENS_PER_USER);
+  await env.PUSH_TOKENS.put(`u:${userId}`, JSON.stringify(list));
+  await env.PUSH_TOKENS.put(`t:${token}`, userId);
+}
+
+async function unregisterToken(env, userId, token) {
+  const list = (await tokensOf(env, userId)).filter((t) => t !== token);
+  await env.PUSH_TOKENS.put(`u:${userId}`, JSON.stringify(list));
+  if ((await env.PUSH_TOKENS.get(`t:${token}`)) === userId) await env.PUSH_TOKENS.delete(`t:${token}`);
+}
+
+let googleToken; // { value, exp } — access token OAuth untuk FCM, di-cache per isolate
+
+async function fcmAccessToken(env) {
+  if (googleToken && googleToken.exp > Date.now() + 60_000) return googleToken.value;
+  const sa = JSON.parse(env.FCM_SERVICE_ACCOUNT);
+  const key = await importPKCS8(sa.private_key, 'RS256');
+  const now = Math.floor(Date.now() / 1000);
+  const assertion = await new SignJWT({ scope: 'https://www.googleapis.com/auth/firebase.messaging' })
+    .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
+    .setIssuer(sa.client_email)
+    .setAudience(sa.token_uri || 'https://oauth2.googleapis.com/token')
+    .setIssuedAt(now)
+    .setExpirationTime(now + 3600)
+    .sign(key);
+  const res = await fetch(sa.token_uri || 'https://oauth2.googleapis.com/token', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${env.BEAMS_SECRET_KEY}` },
-    body: JSON.stringify({
-      users,
-      fcm: { notification: { title, body }, data },
-    }),
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
   });
-  const text = await res.text();
-  console.log('beams publish', res.status, users.length, 'user(s)', text.slice(0, 300));
+  const data = await res.json();
+  if (!res.ok) throw new Error(`google oauth ${res.status}: ${JSON.stringify(data).slice(0, 200)}`);
+  googleToken = { value: data.access_token, exp: Date.now() + data.expires_in * 1000 };
+  return googleToken.value;
+}
+
+/** Push notification ke user tertentu lewat FCM. Token yang sudah tidak berlaku dibersihkan. */
+async function publishToUsers(env, users, title, body, data) {
+  if (!users.length || !env.FCM_SERVICE_ACCOUNT) {
+    if (!env.FCM_SERVICE_ACCOUNT) console.log('push dilewati: FCM_SERVICE_ACCOUNT belum di-set');
+    return;
+  }
+  const projectId = JSON.parse(env.FCM_SERVICE_ACCOUNT).project_id;
+  const access = await fcmAccessToken(env);
+  const payloadData = Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v)]));
+  for (const userId of users) {
+    for (const token of await tokensOf(env, userId)) {
+      const res = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${access}` },
+        body: JSON.stringify({
+          message: {
+            token,
+            notification: { title, body },
+            data: payloadData,
+            android: { priority: 'HIGH', notification: { channel_id: 'household', color: '#FE64A3' } },
+          },
+        }),
+      });
+      const text = await res.text();
+      console.log('fcm send', res.status, text.slice(0, 200));
+      // Token kedaluwarsa / aplikasi dihapus -> buang supaya tidak dicoba lagi.
+      if (res.status === 404 || /UNREGISTERED|INVALID_ARGUMENT.*registration/i.test(text)) {
+        await unregisterToken(env, userId, token);
+      }
+    }
+  }
 }
 
 // --- Rute ------------------------------------------------------------------------------
@@ -149,17 +221,13 @@ async function handle(request, env, ctx) {
     return json({ auth: `${env.PUSHER_KEY}:${signature}` });
   }
 
-  if (url.pathname === '/beams/token' && request.method === 'GET') {
+  if ((url.pathname === '/push/register' || url.pathname === '/push/unregister') && request.method === 'POST') {
     const user = await verifyUser(request, env);
-    if (url.searchParams.get('user_id') !== user.userId) throw new HttpError(403, 'user mismatch');
-    const token = await new SignJWT({})
-      .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
-      .setSubject(user.userId)
-      .setIssuer(`https://${env.BEAMS_INSTANCE_ID}.pushnotifications.pusher.com`)
-      .setExpirationTime('24h')
-      .sign(enc.encode(env.BEAMS_SECRET_KEY));
-    console.log('beams token issued');
-    return json({ token });
+    const { token } = await request.json();
+    if (typeof token !== 'string' || token.length < 20 || token.length > 4096) throw new HttpError(400, 'bad token');
+    if (url.pathname === '/push/register') await registerToken(env, user.userId, token);
+    else await unregisterToken(env, user.userId, token);
+    return json({ ok: true, tokens: (await tokensOf(env, user.userId)).length });
   }
 
   if (url.pathname === '/notify' && request.method === 'POST') {

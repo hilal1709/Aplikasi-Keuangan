@@ -16,7 +16,7 @@ Offline-first (SQLite lokal via Drift) dan tersinkron ke **Neon** (Postgres serv
 - **Berulang** (gaji, langganan) tercatat otomatis — juga di latar belakang (WorkManager).
 - **Tagihan** dengan pengingat H-1/H-3/H-7; tandai lunas otomatis mencatat pengeluaran & membuat tagihan bulan depan.
 - **Rumah tangga**: undang pasangan dengan kode 6 karakter, sinkron realtime lewat Pusher Channels.
-- **Push notification** (Pusher Beams) saat pasangan mencatat transaksi, budget 80%/100%, target tercapai, tagihan lunas.
+- **Push notification** (Firebase Cloud Messaging) saat pasangan mencatat transaksi, menabung ke target, budget 80%/100%, tagihan lunas.
 - **Avatar ilustrasi** kartun untuk profil (12 pilihan, termasuk berhijab).
 - **Widget layar utama**, kunci sidik jari, mode gelap, sembunyikan saldo.
 
@@ -30,7 +30,7 @@ lib/
   features/    halaman per fitur
   services/    notifikasi, tugas latar, widget, kunci aplikasi
 db/migrations/         skema SQL + RLS untuk Neon
-server/                Cloudflare Worker (secret Pusher: auth channel, token Beams, kirim notifikasi)
+server/                Cloudflare Worker (secret Pusher & Firebase: auth channel, token push, kirim notifikasi)
 .github/workflows/     build APK
 ```
 
@@ -73,31 +73,39 @@ Pasangan memasang APK yang sama, daftar, lalu pilih **Gabung dengan kode**.
 > Neon free plan tidak di-pause seperti Supabase: komputasi otomatis tidur saat tidak dipakai dan bangun
 > sendiri pada permintaan berikutnya (sinkron pertama setelah lama diam bisa lebih lambat ±1 detik).
 
-## Realtime & push notification (Pusher) — gratis
+## Realtime & push notification — gratis
 
-Mengirim event Pusher butuh *secret key* yang tidak boleh ada di dalam APK, jadi ada satu fungsi kecil
+Mengirim event Pusher dan push FCM butuh *secret* yang tidak boleh ada di dalam APK, jadi ada satu fungsi kecil
 di Cloudflare Workers (`server/`). Worker memverifikasi login Neon (JWKS), mengecek keanggotaan rumah tangga
-lewat Data API (RLS tetap berlaku), lalu menandatangani channel privat, menerbitkan token Beams, dan mengirim notifikasi.
+lewat Data API (RLS tetap berlaku), menandatangani channel privat Pusher, menyimpan token FCM tiap HP di
+Cloudflare KV, dan mengirim push lewat **Firebase Cloud Messaging HTTP v1**.
 
 1. **Pusher Channels** — [dashboard.pusher.com](https://dashboard.pusher.com) → buat app (cluster `ap1` / Singapore).
    Catat `app_id`, `key`, dan `secret` dari tab *App Keys*.
-2. **Firebase** (dipakai Beams untuk Android) — [console.firebase.google.com](https://console.firebase.google.com) → buat proyek →
+2. **Firebase** — [console.firebase.google.com](https://console.firebase.google.com) → buat proyek →
    tambah aplikasi Android dengan package `com.aurafinance.aura_finance` → unduh `google-services.json`
-   ke `android/app/`. Di *Project settings → Cloud Messaging*, buat **service account key** (JSON).
-3. **Pusher Beams** — dashboard Pusher → Beams → buat instance → *Android* → unggah service account key Firebase tadi.
-   Catat `instance_id` dan `primary key` (secret).
-4. **Worker** — isi `PUSHER_APP_ID`, `PUSHER_KEY`, `PUSHER_CLUSTER`, `BEAMS_INSTANCE_ID` di `server/wrangler.toml`, lalu:
+   ke `android/app/`. Di *Project settings → Service accounts* → **Generate new private key** (file JSON).
+3. **Worker** — isi `PUSHER_APP_ID`, `PUSHER_KEY`, `PUSHER_CLUSTER` di `server/wrangler.toml`, buat KV
+   (`npx wrangler kv namespace create PUSH_TOKENS`, salin `id`-nya ke `wrangler.toml`), lalu:
 
 ```bash
 cd server
 npm install
 npx wrangler login
 npx wrangler secret put PUSHER_SECRET
-npx wrangler secret put BEAMS_SECRET_KEY
+```
+
+   Isi service account Firebase (PowerShell):
+
+```powershell
+Get-Content "path\ke\service-account.json" -Raw | npx wrangler secret put FCM_SERVICE_ACCOUNT
+```
+
+```bash
 npx wrangler deploy
 ```
 
-5. Isi `AURA_API_URL` (URL worker) dan `BEAMS_INSTANCE_ID` di `config/app.json`, lalu:
+4. Isi `AURA_API_URL` (URL worker) di `config/app.json`, lalu:
 
 ```bash
 flutter run --dart-define-from-file=config/app.json
@@ -137,7 +145,7 @@ Build lokal: `flutter build apk --release --split-per-abi --dart-define=...` →
 - Konflik: *last-write-wins* per baris berdasarkan `updated_at`.
 - Hapus = *soft delete* (`deleted_at`) supaya penghapusan ikut tersinkron.
 - Setelah perubahan terkirim, HP ini memanggil Worker `/notify`; Worker memicu event Pusher Channels ke HP lain
-  (yang langsung menarik data) dan push Pusher Beams untuk transaksi/budget/target/tagihan.
+  (yang langsung menarik data) dan push FCM untuk transaksi/budget/target/tagihan.
 - Cadangan tanpa Pusher: polling tiap 30 detik saat aplikasi di layar dan saat dibuka kembali.
 
 ## Tes
