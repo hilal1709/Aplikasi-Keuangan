@@ -56,8 +56,18 @@ class Notifications {
     _ready = true;
   }
 
-  Future<void> requestPermission() async {
-    await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.requestNotificationsPermission();
+  /// Meminta izin notifikasi (Android 13+). Mengembalikan status akhirnya.
+  Future<bool> requestPermission() async {
+    final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    if (android == null) return true;
+    return await android.requestNotificationsPermission() ?? await enabled();
+  }
+
+  /// Apakah aplikasi boleh menampilkan notifikasi di luar aplikasi.
+  Future<bool> enabled() async {
+    await init();
+    final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    return await android?.areNotificationsEnabled() ?? true;
   }
 
   /// Menjadwalkan ulang semua pengingat tagihan yang belum dibayar.

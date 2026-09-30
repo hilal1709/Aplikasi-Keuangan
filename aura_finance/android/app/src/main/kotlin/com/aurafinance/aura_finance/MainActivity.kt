@@ -1,6 +1,9 @@
 package com.aurafinance.aura_finance
 
+import android.content.Intent
+import android.os.Build
 import android.os.Handler
+import android.provider.Settings
 import android.os.Looper
 import com.google.firebase.FirebaseApp
 import com.pusher.pushnotifications.BeamsCallback
@@ -56,6 +59,16 @@ class MainActivity : FlutterFragmentActivity() {
                                 }
                             },
                         )
+                    }
+                    // Pengaturan notifikasi aplikasi ini (dipakai bila izin pernah ditolak).
+                    "openNotificationSettings" -> {
+                        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                        } else {
+                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).setData(android.net.Uri.parse("package:$packageName"))
+                        }
+                        startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        result.success(true)
                     }
                     "clear" -> {
                         PushNotifications.clearAllState()

@@ -21,6 +21,8 @@ import '../../data/providers.dart';
 import '../../data/remote/household_service.dart';
 import '../../data/remote/neon.dart';
 import '../../data/sync/sync_providers.dart';
+import '../../services/notifications.dart';
+import '../../services/realtime.dart';
 
 class HouseholdPage extends ConsumerWidget {
   const HouseholdPage({super.key});
@@ -204,6 +206,9 @@ class _CreateOrJoinState extends ConsumerState<_CreateOrJoin> {
       HapticFeedback.heavyImpact();
       if (mounted) AuraToast.success(context, _join ? 'Bergabung dengan ${h.name}' : '${h.name} dibuat');
       ref.invalidate(currentHouseholdProvider);
+      // Kabar dari pasangan muncul sebagai notifikasi -> minta izinnya sekarang.
+      await ref.read(prefsProvider).setBool('notif_asked', true);
+      await ref.read(notificationsProvider).requestPermission();
     } catch (e) {
       if (mounted) AuraToast.error(context, _friendlyError(e));
     } finally {
@@ -388,6 +393,10 @@ class _HouseholdInfo extends ConsumerWidget {
         const SizedBox(height: AuraSpace.sm + 4),
         const _SharingGuide(),
         const SizedBox(height: AuraSpace.lg),
+        const SectionHeader('Notifikasi'),
+        const SizedBox(height: AuraSpace.sm + 4),
+        const _NotificationCard(),
+        const SizedBox(height: AuraSpace.lg),
         NeuSurface(
           depth: -1,
           radius: AuraRadius.lg,
@@ -499,6 +508,153 @@ class _SharingGuide extends StatelessWidget {
           Text('Tetap bisa sendiri-sendiri', style: AuraType.labelMd.copyWith(color: p.onSurfaceVariant)),
           const SizedBox(height: 10),
           for (final r in _private) row(r, p.tertiary),
+        ],
+      ),
+    );
+  }
+}
+
+/// Status notifikasi di luar aplikasi: izin Android + pendaftaran push (Pusher Beams),
+/// dengan tombol untuk mengaktifkan dan mengirim notifikasi uji.
+class _NotificationCard extends ConsumerStatefulWidget {
+  const _NotificationCard();
+
+  @override
+  ConsumerState<_NotificationCard> createState() => _NotificationCardState();
+}
+
+class _NotificationCardState extends ConsumerState<_NotificationCard> with WidgetsBindingObserver {
+  bool? _enabled;
+  bool _sending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // Kembali dari pengaturan Android -> perbarui status izin.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final on = await ref.read(notificationsProvider).enabled();
+    if (mounted) setState(() => _enabled = on);
+  }
+
+  Future<void> _enable() async {
+    final granted = await ref.read(notificationsProvider).requestPermission();
+    // Izin yang sudah pernah ditolak tidak memunculkan dialog lagi -> buka pengaturan.
+    if (!granted) await ref.read(realtimeProvider.notifier).openNotificationSettings();
+    await _refresh();
+    final uid = ref.read(authUserProvider).value?.id;
+    if (granted && uid != null) await ref.read(realtimeProvider.notifier).registerPush(uid);
+  }
+
+  Future<void> _test() async {
+    setState(() => _sending = true);
+    final ok = await ref.read(realtimeProvider.notifier).sendTestPush();
+    if (!mounted) return;
+    setState(() => _sending = false);
+    if (ok) {
+      AuraToast.show(
+        context,
+        title: 'Keluar dari aplikasi sekarang',
+        message: 'Notifikasi uji dikirim dalam 6 detik. Kalau tidak muncul, cek pengaturan baterai HP.',
+        duration: const Duration(seconds: 6),
+      );
+    } else {
+      AuraToast.error(context, 'Gagal mengirim notifikasi uji', message: 'Periksa koneksi internet.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.aura;
+    final push = ref.watch(pushStatusProvider);
+    final enabled = _enabled;
+
+    Widget row(bool? ok, String title, String detail) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AuraIcon(
+                ok == null
+                    ? HugeIcons.strokeRoundedLoading03
+                    : ok
+                        ? HugeIcons.strokeRoundedCheckmarkCircle02
+                        : HugeIcons.strokeRoundedAlert02,
+                size: 20,
+                color: ok == null ? p.outline : (ok ? p.tertiary : p.error),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: AuraType.labelLg.copyWith(color: p.onSurface)),
+                    Text(detail, style: AuraType.bodySm.copyWith(color: p.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+
+    return NeuSurface(
+      radius: AuraRadius.lg,
+      padding: const EdgeInsets.all(AuraSpace.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          row(
+            enabled,
+            enabled == false ? 'Izin notifikasi mati' : 'Izin notifikasi',
+            enabled == false
+                ? 'Kabar dari pasangan hanya terlihat saat aplikasi dibuka.'
+                : 'Aura boleh menampilkan notifikasi di luar aplikasi.',
+          ),
+          row(
+            push.error != null ? false : (push.registered ? true : null),
+            'Push dari pasangan',
+            push.error != null
+                ? 'Belum terdaftar: ${push.error}'
+                : push.registered
+                    ? 'HP ini terdaftar untuk menerima kabar saat aplikasi tertutup.'
+                    : 'Sedang mendaftarkan HP ini…',
+          ),
+          if (enabled == false)
+            PrimaryAction(label: 'Aktifkan notifikasi', onPressed: _enable)
+          else
+            ShadButton.outline(
+              onPressed: _sending ? null : _test,
+              leading: const AuraIcon(HugeIcons.strokeRoundedNotification03, size: 18),
+              child: Text(_sending ? 'Mengirim…' : 'Kirim notifikasi uji'),
+            ),
+          const SizedBox(height: 10),
+          Text(
+            'HP Xiaomi/Redmi/POCO, Oppo, Vivo: aktifkan "Mulai otomatis" dan atur baterai Aura ke '
+            '"Tanpa batasan", supaya notifikasi tetap masuk saat aplikasi ditutup.',
+            style: AuraType.bodySm.copyWith(color: p.outline),
+          ),
+          if (enabled != false)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: ShadButton.link(
+                onPressed: () => ref.read(realtimeProvider.notifier).openNotificationSettings(),
+                child: const Text('Buka pengaturan notifikasi'),
+              ),
+            ),
         ],
       ),
     );

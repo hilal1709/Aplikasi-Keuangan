@@ -82,6 +82,13 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
   /// jadwalkan ulang pengingat tagihan, dan perbarui widget layar utama.
   Future<void> _housekeeping() async {
     final db = ref.read(dbProvider);
+    // Kabar dari pasangan butuh izin notifikasi (Android 13+). Diminta sekali saat
+    // sudah tergabung rumah tangga; setelahnya bisa diatur dari halaman Rumah Tangga.
+    final prefs = ref.read(prefsProvider);
+    if (ref.read(householdIdProvider) != null && !(prefs.getBool('notif_asked') ?? false)) {
+      await prefs.setBool('notif_asked', true);
+      await ref.read(notificationsProvider).requestPermission();
+    }
     try {
       await runDueRecurring(db);
       await ref.read(notificationsProvider).rescheduleBills();

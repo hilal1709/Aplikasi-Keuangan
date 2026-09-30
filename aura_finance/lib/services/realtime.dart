@@ -24,6 +24,22 @@ abstract final class RealtimeConfig {
   static bool get beamsEnabled => apiUrl.isNotEmpty && beamsInstanceId.isNotEmpty && Neon.enabled;
 }
 
+/// Status pendaftaran HP ini ke Pusher Beams (push saat aplikasi tertutup).
+@immutable
+class PushStatus {
+  const PushStatus({this.registered = false, this.error});
+  final bool registered;
+  final String? error;
+}
+
+class PushStatusNotifier extends Notifier<PushStatus> {
+  @override
+  PushStatus build() => const PushStatus();
+  void set(PushStatus s) => state = s;
+}
+
+final pushStatusProvider = NotifierProvider<PushStatusNotifier, PushStatus>(PushStatusNotifier.new);
+
 /// Pesan dari anggota lain yang tiba lewat realtime (untuk toast di dalam aplikasi).
 @immutable
 class PartnerEvent {
@@ -82,20 +98,56 @@ class RealtimeController extends Notifier<bool> {
         debugPrint('Pusher Channels gagal: $e');
       }
     }
-    if (RealtimeConfig.beamsEnabled) {
-      try {
-        final started = await _beams.invokeMethod<bool>('start', {'instanceId': RealtimeConfig.beamsInstanceId});
-        if (started == true) {
-          await _beams.invokeMethod('setUser', {
-            'userId': userId,
-            'tokenUrl': '${RealtimeConfig.apiUrl}/beams/token',
-            'jwt': await Neon.auth.accessToken(),
-          });
-        }
-      } catch (e) {
-        debugPrint('Pusher Beams gagal: $e');
-      }
+    await registerPush(userId);
+  }
+
+  /// Mendaftarkan HP ini ke Pusher Beams sebagai [userId]. Hasilnya dicatat di
+  /// [pushStatusProvider] supaya bisa dilihat di halaman Rumah Tangga.
+  Future<void> registerPush(String userId) async {
+    final status = ref.read(pushStatusProvider.notifier);
+    if (!RealtimeConfig.beamsEnabled) {
+      status.set(const PushStatus(error: 'Push belum dikonfigurasi di aplikasi ini'));
+      return;
     }
+    try {
+      final started = await _beams.invokeMethod<bool>('start', {'instanceId': RealtimeConfig.beamsInstanceId});
+      if (started != true) {
+        status.set(const PushStatus(error: 'Firebase tidak aktif di aplikasi ini'));
+        return;
+      }
+      await _beams.invokeMethod('setUser', {
+        'userId': userId,
+        'tokenUrl': '${RealtimeConfig.apiUrl}/beams/token',
+        'jwt': await Neon.auth.accessToken(),
+      });
+      status.set(const PushStatus(registered: true));
+    } catch (e) {
+      debugPrint('Pusher Beams gagal: $e');
+      status.set(PushStatus(error: e is PlatformException ? (e.message ?? e.code) : '$e'));
+    }
+  }
+
+  /// Minta server mengirim push uji ke HP ini sendiri beberapa detik lagi,
+  /// supaya pengguna sempat menutup aplikasi dan melihatnya muncul.
+  Future<bool> sendTestPush() async {
+    final hid = ref.read(householdIdProvider);
+    if (RealtimeConfig.apiUrl.isEmpty || hid == null || Neon.auth.currentUser == null) return false;
+    try {
+      final res = await http.post(
+        Uri.parse('${RealtimeConfig.apiUrl}/notify'),
+        headers: {'Authorization': 'Bearer ${await Neon.auth.accessToken()}', 'Content-Type': 'application/json'},
+        body: jsonEncode({'household_id': hid, 'kind': 'test', 'title': 'Notifikasi Aura aktif', 'body': 'Kabar dari pasanganmu akan muncul seperti ini.'}),
+      );
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> openNotificationSettings() async {
+    try {
+      await _beams.invokeMethod('openNotificationSettings');
+    } catch (_) {}
   }
 
   Future<Map<String, dynamic>> _authorize(String channelName, String socketId) async {

@@ -163,9 +163,19 @@ async function handle(request, env, ctx) {
   if (url.pathname === '/notify' && request.method === 'POST') {
     const user = await verifyUser(request, env);
     const { household_id: householdId, kind, title, body, socket_id: socketId, tables, changes } = await request.json();
-    if (!['tx', 'budget', 'goal', 'bill', 'sync'].includes(kind)) throw new HttpError(400, 'bad kind');
+    if (!['tx', 'budget', 'goal', 'bill', 'sync', 'test'].includes(kind)) throw new HttpError(400, 'bad kind');
     const members = await requireMember(env, user, householdId);
     const clip = (s, n) => String(s || '').slice(0, n);
+
+    // Uji push: hanya ke pengirim sendiri, ditunda beberapa detik supaya
+    // pengguna sempat keluar dari aplikasi (push FCM tidak tampil saat aplikasi di layar).
+    if (kind === 'test') {
+      ctx.waitUntil(
+        new Promise((r) => setTimeout(r, 6000)).then(() =>
+          publishToUsers(env, [user.userId], clip(title, 80), clip(body, 160), { kind, household_id: householdId })),
+      );
+      return json({ ok: true });
+    }
 
     // Realtime: kirim isi perubahan (bila muat) + daftar tabel yang perlu ditarik.
     const event = { by: user.userId, kind, title: clip(title, 80), body: clip(body, 160) };
