@@ -13,6 +13,7 @@ import '../../core/utils/rupiah.dart';
 import '../../core/widgets/aura_page.dart';
 import '../../core/widgets/form_sheet.dart';
 import '../../core/widgets/neu_surface.dart';
+import '../../core/widgets/lottie.dart';
 import '../../core/widgets/primitives.dart';
 import '../../data/local/database.dart';
 import '../../data/owner.dart';
@@ -45,7 +46,9 @@ class RecurringPage extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: AuraSpace.margin),
           sliver: SliverList.list(
             children: [
-              if (rules != null && rules.isEmpty)
+              if (rules == null)
+                const AuraLoadingView(label: 'Memuat jadwal…')
+              else if (rules.isEmpty)
                 ClayEmpty(
                   kind: ClayKind.calendar,
                   title: 'Belum ada transaksi berulang',
@@ -53,7 +56,7 @@ class RecurringPage extends ConsumerWidget {
                   action: ShadButton(onPressed: () => showRecurringForm(context), child: const Text('Tambah')),
                 )
               else
-                for (final (i, r) in (rules ?? const <RecurringRule>[]).indexed)
+                for (final (i, r) in rules.indexed)
                   Padding(
                     padding: const EdgeInsets.only(bottom: AuraSpace.md),
                     child: Opacity(

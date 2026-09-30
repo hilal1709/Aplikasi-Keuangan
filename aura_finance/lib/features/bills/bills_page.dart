@@ -14,6 +14,7 @@ import '../../core/utils/rupiah.dart';
 import '../../core/widgets/aura_page.dart';
 import '../../core/widgets/form_sheet.dart';
 import '../../core/widgets/neu_surface.dart';
+import '../../core/widgets/lottie.dart';
 import '../../core/widgets/primitives.dart';
 import '../../data/local/database.dart';
 import '../../data/owner.dart';
@@ -45,7 +46,9 @@ class BillsPage extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: AuraSpace.margin),
           sliver: SliverList.list(
             children: [
-              if (all != null && all.isEmpty)
+              if (all == null)
+                const AuraLoadingView(label: 'Memuat tagihan…')
+              else if (all.isEmpty)
                 ClayEmpty(
                   kind: ClayKind.calendar,
                   title: 'Tidak ada tagihan',
@@ -196,7 +199,8 @@ class _BillTile extends ConsumerWidget {
                     ? ('$days hari lagi', p.secondary)
                     : (DateId.short(bill.dueDate), p.onSurfaceVariant);
 
-    return Opacity(
+    return AnimatedOpacity(
+      duration: Motion.base,
       opacity: paid ? 0.7 : 1,
       child: NeuPressable(
         onTap: paid ? () => _paidOptions(context, ref) : () => showBillForm(context, existing: bill),
@@ -246,7 +250,7 @@ class _BillTile extends ConsumerWidget {
                 ),
               )
             else
-              AuraIcon(HugeIcons.strokeRoundedCheckmarkCircle02, color: p.tertiary),
+              AuraIcon(HugeIcons.strokeRoundedCheckmarkCircle02, color: p.tertiary).popIn(),
           ],
         ),
       ),

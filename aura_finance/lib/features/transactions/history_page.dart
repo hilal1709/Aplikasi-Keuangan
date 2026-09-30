@@ -13,6 +13,7 @@ import '../../core/utils/date_id.dart';
 import '../../core/utils/rupiah.dart';
 import '../../core/widgets/aura_page.dart';
 import '../../core/widgets/neu_surface.dart';
+import '../../core/widgets/lottie.dart';
 import '../../core/widgets/primitives.dart';
 import '../../data/local/database.dart';
 import '../../data/providers.dart';
@@ -143,7 +144,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
             ),
             builder: (context, cSnap) {
               final txs = txSnap.data;
-              if (txs == null || cSnap.data == null) return const SliverToBoxAdapter(child: SizedBox(height: 200));
+              if (txs == null || cSnap.data == null) return const SliverToBoxAdapter(child: AuraLoadingView(label: 'Memuat riwayat…'));
               final q = _search.trim().toLowerCase();
               final contribs = _kind != null
                   ? const <WalletContribution>[]
@@ -183,7 +184,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                       for (final r in e.value)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 12),
-                          child: (r.tx != null ? TxTile(r.tx!, showDate: false) : _ContributionTile(r.contribution!)).staggerIn(index++, stepMs: 30),
+                          child: (r.tx != null ? TxTile(r.tx!, showDate: false) : _ContributionTile(r.contribution!)).slideInX(index++, stepMs: 30),
                         ),
                       const SizedBox(height: AuraSpace.sm),
                     ],

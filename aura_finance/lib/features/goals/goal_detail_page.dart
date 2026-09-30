@@ -18,6 +18,7 @@ import '../../core/utils/rupiah.dart';
 import '../../core/widgets/aura_page.dart';
 import '../../core/widgets/form_sheet.dart';
 import '../../core/widgets/neu_surface.dart';
+import '../../core/widgets/lottie.dart';
 import '../../core/widgets/primitives.dart';
 import '../../data/local/database.dart';
 import '../../data/owner.dart';
@@ -39,7 +40,7 @@ class GoalDetailPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final p = context.aura;
     final entry = (ref.watch(goalsProvider).value ?? const []).where((g) => g.$1.id == id).firstOrNull;
-    if (entry == null) return const Scaffold(body: SizedBox());
+    if (entry == null) return const Scaffold(body: Center(child: AuraLoader()));
     final (goal, saved) = entry;
     final history = ref.watch(_contributionsProvider(id)).value ?? const [];
     final hidden = ref.watch(hideBalanceProvider);

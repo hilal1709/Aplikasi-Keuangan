@@ -9,6 +9,7 @@ import '../icons/category_icons.dart';
 import '../illustrations/clay.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
+import 'lottie.dart';
 import 'neu_surface.dart';
 import 'primitives.dart';
 
@@ -209,6 +210,19 @@ class _ToastViewState extends State<_ToastView> with TickerProviderStateMixin {
                       child: Row(
                         children: [
                           widget.leading ??
+                              (widget.tone == AuraTone.success || widget.tone == AuraTone.error
+                                  ? SizedBox(
+                                      width: 40,
+                                      height: 40,
+                                      child: OverflowBox(
+                                        maxWidth: 56,
+                                        maxHeight: 56,
+                                        child: widget.tone == AuraTone.success
+                                            ? AuraBurst.success(size: 56, color: ink)
+                                            : AuraBurst.error(size: 56, color: ink),
+                                      ),
+                                    )
+                                  : null) ??
                               Container(
                                 width: 40,
                                 height: 40,

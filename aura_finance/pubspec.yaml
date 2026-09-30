@@ -63,6 +63,7 @@ dependencies:
   http: ^1.6.0
   flutter_secure_storage: ^11.2.0
   pusher_channels_flutter: ^2.6.0
+  lottie: ^3.6.1
 
 dev_dependencies:
   flutter_test:
@@ -90,6 +91,7 @@ flutter:
 
   assets:
     - assets/brand/logo_mark.png
+    - assets/lottie/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

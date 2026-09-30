@@ -13,6 +13,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/widgets/aura_page.dart';
 import '../../core/widgets/form_sheet.dart';
 import '../../core/widgets/neu_surface.dart';
+import '../../core/widgets/lottie.dart';
 import '../../core/widgets/primitives.dart';
 import '../../data/local/database.dart';
 import '../../data/owner.dart';
@@ -52,7 +53,9 @@ class WalletsPage extends ConsumerWidget {
         NeuIconButton(HugeIcons.strokeRoundedAdd01, label: 'Tambah dompet', color: p.primary, onTap: () => showWalletForm(context, ref)),
       ],
       slivers: [
-        if (wallets != null && wallets.isEmpty)
+        if (wallets == null)
+          const SliverToBoxAdapter(child: AuraLoadingView(label: 'Memuat dompet…'))
+        else if (wallets.isEmpty)
           SliverToBoxAdapter(
             child: ClayEmpty(
               kind: ClayKind.wallet,
@@ -80,7 +83,7 @@ class WalletsPage extends ConsumerWidget {
                   ),
                 ).staggerIn(0),
                 const SizedBox(height: AuraSpace.lg),
-                for (final (i, w) in (wallets ?? const <WalletBalance>[]).indexed)
+                for (final (i, w) in wallets.indexed)
                   Padding(
                     padding: const EdgeInsets.only(bottom: AuraSpace.md),
                     child: _WalletCard(w: w, hidden: hidden).staggerIn(i + 1),
@@ -94,10 +97,10 @@ class WalletsPage extends ConsumerWidget {
                   const SizedBox(height: AuraSpace.lg),
                   const SectionHeader('Diarsipkan'),
                   const SizedBox(height: AuraSpace.sm + 4),
-                  for (final w in archived)
+                  for (final (i, w) in archived.indexed)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 10),
-                      child: _ArchivedWallet(wallet: w),
+                      child: _ArchivedWallet(wallet: w).slideInX(i),
                     ),
                 ],
                 const SizedBox(height: AuraSpace.xl),

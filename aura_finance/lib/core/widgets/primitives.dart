@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -66,7 +67,7 @@ class MoneyText extends StatelessWidget {
           : TweenAnimationBuilder<double>(
               key: const ValueKey('shown'),
               tween: Tween(end: value.toDouble()),
-              duration: duration,
+              duration: Motion.reduced(context) ? Duration.zero : duration,
               curve: Curves.easeOutExpo,
               builder: (context, v, _) {
                 final n = v.round();
@@ -125,7 +126,7 @@ class NeuProgress extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, box) => TweenAnimationBuilder<double>(
           tween: Tween(begin: 0, end: value.clamp(0, 1)),
-          duration: const Duration(milliseconds: 1100),
+          duration: Motion.reduced(context) ? Duration.zero : const Duration(milliseconds: 1100),
           curve: Curves.elasticOut,
           builder: (context, v, _) => Align(
             alignment: Alignment.centerLeft,
@@ -259,14 +260,119 @@ class PillLink extends StatelessWidget {
   }
 }
 
+/// Durasi & kurva animasi bersama, plus penghormatan pada "Remove animations" OS.
+class Motion {
+  Motion._();
+  static const fast = Duration(milliseconds: 220);
+  static const base = Duration(milliseconds: 420);
+  static const slow = Duration(milliseconds: 700);
+  static const expo = Curves.easeOutExpo;
+  static const back = Curves.easeOutBack;
+
+  static bool reduced(BuildContext context) => MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+}
+
 extension StaggerX on Widget {
-  /// Entrance standar: naik 16px + fade, dengan jeda bertingkat per indeks.
+  /// Entrance standar: naik + fade + sedikit membesar, dengan jeda bertingkat per indeks.
   Widget staggerIn(int index, {int stepMs = 45, int baseMs = 0}) => _StaggerIn(delay: baseMs + index * stepMs, child: this);
+
+  /// Muncul membal (scale + fade) — untuk centang, lencana, dan elemen kecil.
+  Widget popIn({int delayMs = 0}) => _PopIn(delay: delayMs, child: this);
+
+  /// Masuk dari samping (mis. item daftar), bertingkat per indeks.
+  Widget slideInX(int index, {double dx = 28, int stepMs = 40}) =>
+      _StaggerIn(delay: index * stepMs, dx: dx, dy: 0, child: this);
+}
+
+/// Bergoyang horizontal sekali tiap [trigger] bertambah (validasi gagal).
+class ShakeX extends StatefulWidget {
+  const ShakeX({super.key, required this.trigger, required this.child});
+  final int trigger;
+  final Widget child;
+
+  @override
+  State<ShakeX> createState() => _ShakeXState();
+}
+
+class _ShakeXState extends State<ShakeX> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 420));
+
+  @override
+  void didUpdateWidget(ShakeX old) {
+    super.didUpdateWidget(old);
+    if (widget.trigger != old.trigger && !Motion.reduced(context)) _c.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _c,
+        child: widget.child,
+        builder: (context, child) {
+          final t = _c.value;
+          final dx = math.sin(t * math.pi * 5) * (1 - t) * 9;
+          return Transform.translate(offset: Offset(dx, 0), child: child);
+        },
+      );
+}
+
+class _PopIn extends StatefulWidget {
+  const _PopIn({required this.delay, required this.child});
+  final int delay;
+  final Widget child;
+
+  @override
+  State<_PopIn> createState() => _PopInState();
+}
+
+class _PopInState extends State<_PopIn> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 520));
+  bool _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (Motion.reduced(context)) {
+      _c.value = 1;
+    } else {
+      Future.delayed(Duration(milliseconds: widget.delay), () {
+        if (mounted) _c.forward();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _c,
+        child: widget.child,
+        builder: (context, child) {
+          final s = Curves.elasticOut.transform(_c.value);
+          return Opacity(
+            opacity: Curves.easeOut.transform((_c.value * 2).clamp(0, 1)),
+            child: Transform.scale(scale: 0.4 + 0.6 * s, child: child),
+          );
+        },
+      );
 }
 
 class _StaggerIn extends StatefulWidget {
-  const _StaggerIn({required this.delay, required this.child});
+  const _StaggerIn({required this.delay, required this.child, this.dx = 0, this.dy = 18});
   final int delay;
+  final double dx;
+  final double dy;
   final Widget child;
 
   @override
@@ -274,12 +380,19 @@ class _StaggerIn extends StatefulWidget {
 }
 
 class _StaggerInState extends State<_StaggerIn> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 560));
-  late final Animation<double> _a = CurvedAnimation(parent: _c, curve: Curves.easeOutCubic);
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 680));
+  late final Animation<double> _a = CurvedAnimation(parent: _c, curve: Curves.easeOutExpo);
+  bool _started = false;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (Motion.reduced(context)) {
+      _c.value = 1;
+      return;
+    }
     Future.delayed(Duration(milliseconds: widget.delay), () {
       if (mounted) _c.forward();
     });
@@ -296,10 +409,16 @@ class _StaggerInState extends State<_StaggerIn> with SingleTickerProviderStateMi
     return AnimatedBuilder(
       animation: _a,
       child: widget.child,
-      builder: (context, child) => Opacity(
-        opacity: _a.value,
-        child: Transform.translate(offset: Offset(0, 16 * (1 - _a.value)), child: child),
-      ),
+      builder: (context, child) {
+        final t = _a.value;
+        return Opacity(
+          opacity: t.clamp(0, 1),
+          child: Transform.translate(
+            offset: Offset(widget.dx * (1 - t), widget.dy * (1 - t)),
+            child: Transform.scale(scale: 0.96 + 0.04 * t, child: child),
+          ),
+        );
+      },
     );
   }
 }

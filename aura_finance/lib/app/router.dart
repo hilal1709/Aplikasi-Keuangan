@@ -67,6 +67,7 @@ Page<void> _slide(GoRouterState s, Widget child) => CustomTransitionPage(
       transitionDuration: const Duration(milliseconds: 420),
       reverseTransitionDuration: const Duration(milliseconds: 320),
       transitionsBuilder: (c, a, sa, child) {
+        if (MediaQuery.maybeDisableAnimationsOf(c) ?? false) return FadeTransition(opacity: a, child: child);
         final inCurve = CurvedAnimation(parent: a, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
         final outCurve = CurvedAnimation(parent: sa, curve: Curves.easeOutCubic);
         return SlideTransition(

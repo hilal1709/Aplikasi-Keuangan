@@ -14,6 +14,7 @@ import '../../core/utils/date_id.dart';
 import '../../core/widgets/aura_page.dart';
 import '../../core/widgets/form_sheet.dart';
 import '../../core/widgets/neu_surface.dart';
+import '../../core/widgets/lottie.dart';
 import '../../core/widgets/primitives.dart';
 import '../../data/local/database.dart';
 import '../../data/owner.dart';
@@ -57,7 +58,9 @@ class GoalsPage extends ConsumerWidget {
           ],
         ).staggerIn(0),
         const SizedBox(height: AuraSpace.lg),
-        if (goals != null && goals.isEmpty)
+        if (goals == null)
+          const AuraLoadingView(label: 'Memuat target…')
+        else if (goals.isEmpty)
           ClayEmpty(
             kind: ClayKind.travel,
             size: 180,
@@ -66,12 +69,12 @@ class GoalsPage extends ConsumerWidget {
             action: ShadButton(onPressed: () => showGoalForm(context), child: const Text('Buat target')),
           ).staggerIn(1)
         else if (ref.watch(householdIdProvider) == null)
-          for (final (i, (g, saved)) in (goals ?? const <(Goal, int)>[]).indexed)
+          for (final (i, (g, saved)) in goals.indexed)
             Padding(padding: const EdgeInsets.only(bottom: AuraSpace.md), child: GoalCard(goal: g, saved: saved).staggerIn(i + 1))
         else
           for (final (title, list) in [
-            ('Bersama', (goals ?? const <(Goal, int)>[]).where((g) => g.$1.isShared).toList()),
-            ('Pribadi', (goals ?? const <(Goal, int)>[]).where((g) => !g.$1.isShared).toList()),
+            ('Bersama', goals.where((g) => g.$1.isShared).toList()),
+            ('Pribadi', goals.where((g) => !g.$1.isShared).toList()),
           ])
             if (list.isNotEmpty) ...[
               SectionHeader(title == 'Bersama' ? 'Target bersama' : 'Target pribadiku'),

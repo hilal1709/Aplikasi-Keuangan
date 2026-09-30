@@ -85,7 +85,7 @@ class GoalCard extends ConsumerWidget {
                   '${pct.toStringAsFixed(pct < 10 && pct > 0 ? 1 : 0)}%',
                   style: AuraType.labelSm.copyWith(color: done ? p.onTertiaryFixed : p.onPrimaryFixed),
                 ),
-              ),
+              ).popIn(delayMs: 250),
             ],
           ),
           const SizedBox(height: AuraSpace.sm + 4),

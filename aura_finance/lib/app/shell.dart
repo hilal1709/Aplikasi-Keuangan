@@ -141,7 +141,7 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
       extendBody: true,
       body: Stack(
         children: [
-          widget.shell,
+          _TabTransition(index: widget.shell.currentIndex, child: widget.shell),
           Positioned(
             top: 0,
             left: 0,
@@ -174,6 +174,50 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
       ),
     );
   }
+}
+
+/// Pergantian tab: konten baru naik sedikit + fade + membesar halus.
+/// Anak tidak diberi key baru, jadi state tiap tab (IndexedStack) tetap utuh.
+class _TabTransition extends StatefulWidget {
+  const _TabTransition({required this.index, required this.child});
+  final int index;
+  final Widget child;
+
+  @override
+  State<_TabTransition> createState() => _TabTransitionState();
+}
+
+class _TabTransitionState extends State<_TabTransition> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 460), value: 1);
+  late final Animation<double> _a = CurvedAnimation(parent: _c, curve: Curves.easeOutExpo);
+
+  @override
+  void didUpdateWidget(_TabTransition old) {
+    super.didUpdateWidget(old);
+    if (old.index != widget.index && !Motion.reduced(context)) _c.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _a,
+        child: widget.child,
+        builder: (context, child) {
+          final t = _a.value;
+          return Opacity(
+            opacity: 0.2 + 0.8 * t,
+            child: Transform.translate(
+              offset: Offset(0, 14 * (1 - t)),
+              child: Transform.scale(scale: 0.985 + 0.015 * t, child: child),
+            ),
+          );
+        },
+      );
 }
 
 class _NavItem {
