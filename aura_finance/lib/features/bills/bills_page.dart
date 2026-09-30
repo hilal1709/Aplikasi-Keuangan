@@ -136,11 +136,46 @@ class _BillTile extends ConsumerWidget {
             body: '${Rupiah.format(bill.amount)}${who.isEmpty ? '' : ' · dibayar $who'}',
           );
     }
-    if (context.mounted) {
-      AuraToast.success(
-        context,
-        '${bill.name} lunas',
-        message: bill.walletId == null ? 'Ditandai lunas tanpa mencatat pengeluaran.' : 'Pengeluaran otomatis dicatat.',
+    AuraToast.global(
+      title: '${bill.name} lunas',
+      message: bill.walletId == null ? 'Ditandai lunas tanpa mencatat pengeluaran.' : 'Pengeluaran otomatis dicatat.',
+      tone: AuraTone.success,
+    );
+  }
+
+  /// Tagihan lunas: batalkan pelunasan (salah tekan) atau hapus dari daftar.
+  Future<void> _paidOptions(BuildContext context, WidgetRef ref) async {
+    final choice = await showAuraModal<String>(
+      context,
+      title: bill.name,
+      message: 'Lunas ${DateId.short(bill.paidAt!)} · ${Rupiah.format(bill.amount)}.\n'
+          'Batalkan pelunasan jika salah tekan — pengeluaran otomatisnya ikut dihapus.',
+      actions: const [
+        AuraModalAction('Tutup'),
+        AuraModalAction('Batalkan lunas', value: 'unpay', primary: true),
+        AuraModalAction('Hapus', value: 'delete', destructive: true),
+      ],
+    );
+    if (choice == null || !context.mounted) return;
+    final db = ref.read(dbProvider);
+    if (choice == 'unpay') {
+      final u = await db.unpayBill(bill.id);
+      await ref.read(notificationsProvider).rescheduleBills();
+      if (u == null) return;
+      AuraToast.global(
+        title: '${bill.name} kembali belum dibayar',
+        message: u.txIds.isEmpty ? null : 'Pengeluaran otomatisnya dihapus.',
+        tone: AuraTone.warning,
+        actionLabel: 'Urungkan',
+        onAction: () => db.undoUnpayBill(u),
+        duration: const Duration(seconds: 5),
+      );
+    } else {
+      await db.softDeleteBill(bill.id);
+      AuraToast.global(
+        title: 'Tagihan dihapus',
+        message: 'Pengeluaran yang sudah tercatat tetap ada di riwayat.',
+        tone: AuraTone.warning,
       );
     }
   }
@@ -164,7 +199,7 @@ class _BillTile extends ConsumerWidget {
     return Opacity(
       opacity: paid ? 0.7 : 1,
       child: NeuPressable(
-        onTap: paid ? null : () => showBillForm(context, existing: bill),
+        onTap: paid ? () => _paidOptions(context, ref) : () => showBillForm(context, existing: bill),
         radius: AuraRadius.lg,
         pressedScale: 0.98,
         padding: const EdgeInsets.all(AuraSpace.md),
@@ -348,6 +383,8 @@ class _BillFormState extends ConsumerState<_BillForm> {
             label: 'Hapus tagihan',
             destructive: true,
             onPressed: () async {
+              final ok = await confirmDelete(context, title: 'Hapus tagihan ${widget.existing!.name}?', message: 'Pengingatnya ikut dihentikan.');
+              if (!ok) return;
               await ref.read(dbProvider).softDeleteBill(widget.existing!.id);
               await ref.read(notificationsProvider).rescheduleBills();
               if (context.mounted) Navigator.of(context).pop();

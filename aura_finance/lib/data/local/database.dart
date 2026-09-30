@@ -2,6 +2,8 @@ import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../domain/finance_math.dart' show advance;
+
 import 'seed.dart';
 import 'tables.dart';
 
@@ -37,6 +39,15 @@ class WalletContribution {
   const WalletContribution(this.contribution, this.goal);
   final GoalContribution contribution;
   final Goal? goal;
+}
+
+/// Catatan apa saja yang diubah saat membatalkan pelunasan, supaya bisa diurungkan.
+class BillUnpay {
+  const BillUnpay(this.billId, this.paidAt, this.txIds, this.nextBillIds);
+  final String billId;
+  final DateTime paidAt;
+  final List<String> txIds;
+  final List<String> nextBillIds;
 }
 
 class CategorySpend {
@@ -376,9 +387,79 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> softDeleteBill(String id) => _softDelete(bills, id);
 
+  /// Membatalkan pelunasan tagihan: status kembali "belum dibayar", pengeluaran
+  /// otomatisnya dihapus, dan tagihan bulan berikut yang dibuat saat pelunasan
+  /// (bila belum dibayar) ikut dihapus. Mengembalikan data untuk "Urungkan".
+  Future<BillUnpay?> unpayBill(String billId) => transaction(() async {
+        final b = await (select(bills)..where((x) => x.id.equals(billId))).getSingleOrNull();
+        if (b == null || b.paidAt == null) return null;
+        final txs = await (select(txEntries)..where((t) => t.billId.equals(billId) & t.deletedAt.isNull())).get();
+        final next = !b.repeatMonthly
+            ? const <Bill>[]
+            : await (select(bills)
+                  ..where((x) =>
+                      x.id.isNotValue(billId) &
+                      x.deletedAt.isNull() &
+                      x.paidAt.isNull() &
+                      x.name.equals(b.name) &
+                      x.dueDate.equals(advance(b.dueDate, Frequency.monthly))))
+                .get();
+        for (final t in txs) {
+          await _softDelete(txEntries, t.id);
+        }
+        for (final n in next) {
+          await _softDelete(bills, n.id);
+        }
+        await upsertBill(b.toCompanion(true).copyWith(paidAt: const Value(null)));
+        return BillUnpay(billId, b.paidAt!, [for (final t in txs) t.id], [for (final n in next) n.id]);
+      });
+
+  Future<void> undoUnpayBill(BillUnpay u) => transaction(() async {
+        for (final id in u.txIds) {
+          await restoreTx(id);
+        }
+        for (final id in u.nextBillIds) {
+          await _restore(bills, id);
+        }
+        await (update(bills)..where((x) => x.id.equals(u.billId)))
+            .write(BillsCompanion(paidAt: Value(u.paidAt), updatedAt: Value(DateTime.now()), dirty: const Value(true)));
+      });
+
+  /// Hapus satu setoran/penarikan target, lalu sesuaikan status "tercapai".
+  Future<void> softDeleteContribution(String id) => transaction(() async {
+        final c = await (select(goalContributions)..where((x) => x.id.equals(id))).getSingleOrNull();
+        await _softDelete(goalContributions, id);
+        if (c != null) await refreshGoalAchieved(c.goalId);
+      });
+
+  Future<void> restoreContribution(String id) => transaction(() async {
+        final c = await (select(goalContributions)..where((x) => x.id.equals(id))).getSingleOrNull();
+        await _restore(goalContributions, id);
+        if (c != null) await refreshGoalAchieved(c.goalId);
+      });
+
+  /// `achieved_at` diisi saat terkumpul >= target, dikosongkan bila turun lagi.
+  Future<void> refreshGoalAchieved(String goalId) async {
+    final g = await (select(goals)..where((x) => x.id.equals(goalId))).getSingleOrNull();
+    if (g == null) return;
+    final r = await customSelect(
+      'SELECT COALESCE(SUM(amount), 0) AS s FROM goal_contributions WHERE goal_id = ? AND deleted_at IS NULL',
+      variables: [Variable.withString(goalId)],
+    ).getSingle();
+    final reached = r.read<int>('s') >= g.target;
+    if (reached == (g.achievedAt != null)) return;
+    await upsertGoal(g.toCompanion(true).copyWith(achievedAt: Value(reached ? DateTime.now() : null)));
+  }
+
   // ---------------------------------------------------------------------------
 
   Stream<List<Member>> watchMembers() => select(members).watch();
+
+  Future<void> _restore<T extends Table, D>(TableInfo<T, D> table, String id) => customUpdate(
+        'UPDATE ${table.actualTableName} SET deleted_at = NULL, updated_at = ?, dirty = 1 WHERE id = ?',
+        variables: [Variable.withDateTime(DateTime.now()), Variable.withString(id)],
+        updates: {table},
+      );
 
   Future<void> _softDelete<T extends Table, D>(TableInfo<T, D> table, String id) {
     final now = DateTime.now();

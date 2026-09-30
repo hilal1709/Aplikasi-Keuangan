@@ -291,6 +291,8 @@ class _BudgetFormState extends ConsumerState<_BudgetForm> {
             label: 'Hapus budget',
             destructive: true,
             onPressed: () async {
+              final ok = await confirmDelete(context, title: 'Hapus budget ini?', message: 'Transaksinya tidak ikut terhapus.');
+              if (!ok) return;
               await ref.read(dbProvider).softDeleteBudget(widget.existing!.id);
               if (context.mounted) Navigator.of(context).pop();
             },

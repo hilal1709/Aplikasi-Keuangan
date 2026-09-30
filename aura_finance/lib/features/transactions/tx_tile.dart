@@ -14,6 +14,35 @@ import '../../data/local/database.dart';
 import '../../data/providers.dart';
 import 'add_tx_sheet.dart';
 
+/// Menghapus transaksi dengan toast "Urungkan". Pengeluaran dari pelunasan tagihan
+/// sekaligus membatalkan pelunasannya, supaya tagihan tidak tertinggal "lunas".
+Future<void> deleteTxWithUndo(BuildContext context, WidgetRef ref, TxEntry tx) async {
+  final db = ref.read(dbProvider);
+  if (tx.billId != null) {
+    final u = await db.unpayBill(tx.billId!);
+    if (u != null) {
+      AuraToast.global(
+        title: 'Pelunasan dibatalkan',
+        message: '${tx.note.isNotEmpty ? tx.note : 'Tagihan'} kembali belum dibayar.',
+        tone: AuraTone.warning,
+        actionLabel: 'Urungkan',
+        onAction: () => db.undoUnpayBill(u),
+        duration: const Duration(seconds: 5),
+      );
+      return;
+    }
+  }
+  await db.softDeleteTx(tx.id);
+  AuraToast.global(
+    title: 'Transaksi dihapus',
+    message: tx.note.isNotEmpty ? tx.note : null,
+    tone: AuraTone.warning,
+    actionLabel: 'Urungkan',
+    onAction: () => db.restoreTx(tx.id),
+    duration: const Duration(seconds: 5),
+  );
+}
+
 /// Baris transaksi: ketuk untuk edit, geser ke kiri untuk hapus (dengan "Urungkan").
 class TxTile extends ConsumerWidget {
   const TxTile(this.tx, {super.key, this.showDate = true});
@@ -62,20 +91,7 @@ class TxTile extends ConsumerWidget {
         decoration: BoxDecoration(color: p.secondaryFixed, borderRadius: BorderRadius.circular(AuraRadius.md)),
         child: AuraIcon(HugeIcons.strokeRoundedDelete02, color: p.secondary),
       ),
-      onDismissed: (_) async {
-        final db = ref.read(dbProvider);
-        await db.softDeleteTx(tx.id);
-        if (!context.mounted) return;
-        AuraToast.show(
-          context,
-          title: 'Transaksi dihapus',
-          message: tx.note.isNotEmpty ? tx.note : null,
-          tone: AuraTone.warning,
-          actionLabel: 'Urungkan',
-          onAction: () => db.restoreTx(tx.id),
-          duration: const Duration(seconds: 5),
-        );
-      },
+      onDismissed: (_) => deleteTxWithUndo(context, ref, tx),
       child: NeuPressable(
         onTap: () => showAddTxSheet(context, existing: tx),
         radius: AuraRadius.md,

@@ -69,6 +69,48 @@ void main() {
     });
   });
 
+  group('membatalkan & menghapus', () {
+    test('batal lunas: tagihan kembali belum dibayar, pengeluaran & tagihan bulan depan dihapus, bisa diurungkan', () async {
+      await wallet('bca', initial: 1000000);
+      final due = DateTime(2026, 10, 10);
+      final paidAt = DateTime(2026, 9, 30, 15);
+      await db.upsertBill(BillsCompanion.insert(id: 'okt', name: 'kos', amount: 600000, dueDate: due, walletId: const Value('bca'), paidAt: Value(paidAt)));
+      await db.upsertTx(TxEntriesCompanion.insert(id: 'bayar', kind: TxKind.expense, amount: 600000, walletId: 'bca', occurredAt: paidAt, billId: const Value('okt')));
+      await db.upsertBill(BillsCompanion.insert(id: 'nov', name: 'kos', amount: 600000, dueDate: DateTime(2026, 11, 10), walletId: const Value('bca')));
+      expect((await db.watchWalletBalances().first).single.balance, 400000);
+
+      final u = await db.unpayBill('okt');
+      expect(u!.txIds, ['bayar']);
+      expect(u.nextBillIds, ['nov']);
+      var bills = await db.watchBills().first;
+      expect(bills.single.id, 'okt');
+      expect(bills.single.paidAt, isNull);
+      expect((await db.watchWalletBalances().first).single.balance, 1000000);
+
+      await db.undoUnpayBill(u);
+      bills = await db.watchBills().first;
+      expect(bills.map((b) => b.id).toSet(), {'okt', 'nov'});
+      expect(bills.firstWhere((b) => b.id == 'okt').paidAt, isNotNull);
+      expect((await db.watchWalletBalances().first).single.balance, 400000);
+    });
+
+    test('hapus setoran menyesuaikan saldo dompet & status tercapai', () async {
+      await wallet('bca', initial: 1000000);
+      await db.upsertGoal(GoalsCompanion.insert(id: 'g', name: 'HP', target: 300000, illustration: 'gadget', color: 0));
+      await db.addContribution(GoalContributionsCompanion.insert(id: 'c1', goalId: 'g', amount: 300000, occurredAt: DateTime.now(), walletId: const Value('bca')));
+      await db.refreshGoalAchieved('g');
+      expect((await db.watchGoalsWithSaved().first).single.$1.achievedAt, isNotNull);
+
+      await db.softDeleteContribution('c1');
+      expect((await db.watchGoalsWithSaved().first).single.$1.achievedAt, isNull);
+      expect((await db.watchWalletBalances().first).single.balance, 1000000);
+
+      await db.restoreContribution('c1');
+      expect((await db.watchGoalsWithSaved().first).single.$1.achievedAt, isNotNull);
+      expect((await db.watchWalletBalances().first).single.balance, 700000);
+    });
+  });
+
   group('perubahan dari Pusher', () {
     late SyncEngine engine;
     setUp(() async {

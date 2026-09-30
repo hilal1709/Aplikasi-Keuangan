@@ -34,6 +34,14 @@ extension on AuraTone {
 abstract final class AuraToast {
   static _ToastEntry? _current;
 
+  /// Overlay utama aplikasi. Diingat supaya toast tetap bisa tampil walau widget
+  /// pemanggilnya sudah hilang (mis. kartu yang baru digeser untuk dihapus, atau
+  /// tagihan yang pindah dari "lunas" ke "belum dibayar").
+  static OverlayState? _root;
+
+  /// Dipanggil sekali dari kerangka aplikasi.
+  static void attach(BuildContext context) => _root = Overlay.maybeOf(context, rootOverlay: true) ?? _root;
+
   static void show(
     BuildContext context, {
     required String title,
@@ -44,8 +52,9 @@ abstract final class AuraToast {
     Widget? leading,
     Duration duration = const Duration(milliseconds: 3200),
   }) {
-    final overlay = Overlay.maybeOf(context, rootOverlay: true);
-    if (overlay == null) return;
+    final overlay = (context.mounted ? Overlay.maybeOf(context, rootOverlay: true) : null) ?? _root;
+    if (overlay == null || !overlay.mounted) return;
+    _root = overlay;
     _current?.dismiss();
     switch (tone) {
       case AuraTone.error:
@@ -76,6 +85,21 @@ abstract final class AuraToast {
     );
     _current = entry;
     overlay.insert(entry.overlay);
+  }
+
+  /// Toast di overlay utama tanpa bergantung pada `context` pemanggil — untuk aksi
+  /// setelah `await` yang membuat widget pemanggilnya hilang.
+  static void global({
+    required String title,
+    String? message,
+    AuraTone tone = AuraTone.info,
+    String? actionLabel,
+    VoidCallback? onAction,
+    Duration duration = const Duration(milliseconds: 3200),
+  }) {
+    final root = _root;
+    if (root == null || !root.mounted) return;
+    show(root.context, title: title, message: message, tone: tone, actionLabel: actionLabel, onAction: onAction, duration: duration);
   }
 
   static void success(BuildContext c, String title, {String? message}) => show(c, title: title, message: message, tone: AuraTone.success);

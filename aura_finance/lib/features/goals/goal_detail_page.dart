@@ -27,7 +27,9 @@ import '../../domain/finance_math.dart';
 import '../../services/realtime.dart';
 import 'goals_page.dart';
 
-final _contributionsProvider = StreamProvider.family<List<GoalContribution>, String>((ref, id) => ref.watch(dbProvider).watchContributions(id));
+final _contributionsProvider = StreamProvider.family<List<GoalContribution>, String>(
+  (ref, id) => ref.watch(dbProvider).watchContributions(id),
+);
 
 class GoalDetailPage extends ConsumerWidget {
   const GoalDetailPage({super.key, required this.id});
@@ -58,7 +60,11 @@ class GoalDetailPage extends ConsumerWidget {
       title: goal.name,
       subtitle: ratio >= 1 ? 'Target tercapai' : '${(ratio * 100).toStringAsFixed(0)}% terkumpul',
       actions: [
-        NeuIconButton(HugeIcons.strokeRoundedPencilEdit02, label: 'Ubah', onTap: () => showGoalForm(context, existing: goal)),
+        NeuIconButton(
+          HugeIcons.strokeRoundedPencilEdit02,
+          label: 'Ubah',
+          onTap: () => showGoalForm(context, existing: goal),
+        ),
         NeuIconButton(
           HugeIcons.strokeRoundedDelete02,
           label: 'Hapus',
@@ -96,7 +102,13 @@ class GoalDetailPage extends ConsumerWidget {
                 ).staggerIn(0),
               ],
               const SizedBox(height: AuraSpace.lg),
-              Center(child: MoneyText(saved, hidden: hidden, style: AuraType.currency.copyWith(color: p.onSurface))).staggerIn(1),
+              Center(
+                child: MoneyText(
+                  saved,
+                  hidden: hidden,
+                  style: AuraType.currency.copyWith(color: p.onSurface),
+                ),
+              ).staggerIn(1),
               Center(
                 child: Text(
                   hidden ? 'dari Rp •••' : 'dari ${Rupiah.format(goal.target)}',
@@ -106,7 +118,9 @@ class GoalDetailPage extends ConsumerWidget {
               const SizedBox(height: AuraSpace.lg),
               Row(
                 children: [
-                  Expanded(child: _Stat(label: 'Sisa', value: hidden ? 'Rp •••' : Rupiah.compact(remaining))),
+                  Expanded(
+                    child: _Stat(label: 'Sisa', value: hidden ? 'Rp •••' : Rupiah.compact(remaining)),
+                  ),
                   const SizedBox(width: AuraSpace.md),
                   Expanded(
                     child: _Stat(
@@ -114,10 +128,10 @@ class GoalDetailPage extends ConsumerWidget {
                       value: perMonth != null
                           ? (hidden ? 'Rp •••' : Rupiah.compact(perMonth))
                           : ratio >= 1
-                              ? 'Selesai'
-                              : eta == null
-                                  ? '—'
-                                  : DateId.month(eta),
+                          ? 'Selesai'
+                          : eta == null
+                          ? '—'
+                          : DateId.month(eta),
                     ),
                   ),
                 ],
@@ -159,55 +173,78 @@ class GoalDetailPage extends ConsumerWidget {
                 for (final (i, c) in history.indexed)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 10),
-                    child: NeuSurface(
-                      radius: AuraRadius.md,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      child: Row(
-                        children: [
-                          if (inHousehold) ...[
-                            AuraAvatar(
-                              avatarKey: memberById[c.createdBy]?.avatar,
-                              name: memberById[c.createdBy]?.displayName ?? '',
-                              fallbackColor: Color(memberById[c.createdBy]?.color ?? 0xFFFE64A3),
-                              size: 38,
+                    child: _SwipeToDelete(
+                      key: ValueKey('contrib-${c.id}'),
+                      onDelete: () => _deleteContribution(context, ref, c),
+                      child: NeuSurface(
+                        radius: AuraRadius.md,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        child: Row(
+                          children: [
+                            if (inHousehold) ...[
+                              AuraAvatar(
+                                avatarKey: memberById[c.createdBy]?.avatar,
+                                name: memberById[c.createdBy]?.displayName ?? '',
+                                fallbackColor: Color(memberById[c.createdBy]?.color ?? 0xFFFE64A3),
+                                size: 38,
+                              ),
+                              const SizedBox(width: 12),
+                            ],
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _historyTitle(c, inHousehold ? memberById[c.createdBy] : null),
+                                    style: AuraType.labelLg.copyWith(color: p.onSurface),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  Text(
+                                    [
+                                      DateId.short(c.occurredAt),
+                                      if (c.note.isNotEmpty) c.note,
+                                      if (c.walletId != null)
+                                        '${c.amount >= 0 ? 'dari' : 'ke'} ${wallets[c.walletId]?.wallet.name ?? 'dompet lain'}',
+                                    ].join(' · '),
+                                    style: AuraType.bodySm.copyWith(color: p.onSurfaceVariant),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
                             ),
-                            const SizedBox(width: 12),
+                            Text(
+                              hidden ? 'Rp •••' : Rupiah.format(c.amount, signed: true),
+                              style: AuraType.labelLg.copyWith(color: c.amount >= 0 ? p.tertiary : p.secondary),
+                            ),
                           ],
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _historyTitle(c, inHousehold ? memberById[c.createdBy] : null),
-                                  style: AuraType.labelLg.copyWith(color: p.onSurface),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                Text(
-                                  [
-                                    DateId.short(c.occurredAt),
-                                    if (c.note.isNotEmpty) c.note,
-                                    if (c.walletId != null) '${c.amount >= 0 ? 'dari' : 'ke'} ${wallets[c.walletId]?.wallet.name ?? 'dompet lain'}',
-                                  ].join(' · '),
-                                  style: AuraType.bodySm.copyWith(color: p.onSurfaceVariant),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ),
-                          ),
-                          Text(
-                            hidden ? 'Rp •••' : Rupiah.format(c.amount, signed: true),
-                            style: AuraType.labelLg.copyWith(color: c.amount >= 0 ? p.tertiary : p.secondary),
-                          ),
-                        ],
+                        ),
                       ),
                     ).staggerIn(5 + i, stepMs: 30),
                   ),
+              if (history.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text('Geser setoran ke kiri untuk menghapus.', style: AuraType.bodySm.copyWith(color: p.outline)),
+                ),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  Future<void> _deleteContribution(BuildContext context, WidgetRef ref, GoalContribution c) async {
+    final db = ref.read(dbProvider);
+    await db.softDeleteContribution(c.id);
+    AuraToast.global(
+      title: c.amount >= 0 ? 'Setoran dihapus' : 'Penarikan dihapus',
+      message: c.walletId == null ? null : 'Saldo dompet ikut disesuaikan.',
+      tone: AuraTone.warning,
+      actionLabel: 'Urungkan',
+      onAction: () => db.restoreContribution(c.id),
+      duration: const Duration(seconds: 5),
     );
   }
 
@@ -221,34 +258,38 @@ class GoalDetailPage extends ConsumerWidget {
     final amount = result.amount;
     final owner = ownerStamp(ref);
     final db = ref.read(dbProvider);
-    await db.addContribution(GoalContributionsCompanion.insert(
-      id: newId(),
-      goalId: goal.id,
-      amount: withdraw ? -amount : amount,
-      occurredAt: DateTime.now(),
-      note: Value(result.note),
-      walletId: Value(result.walletId),
-      householdId: Value(goal.householdId ?? owner.householdId),
-      createdBy: Value(owner.userId),
-    ));
+    await db.addContribution(
+      GoalContributionsCompanion.insert(
+        id: newId(),
+        goalId: goal.id,
+        amount: withdraw ? -amount : amount,
+        occurredAt: DateTime.now(),
+        note: Value(result.note),
+        walletId: Value(result.walletId),
+        householdId: Value(goal.householdId ?? owner.householdId),
+        createdBy: Value(owner.userId),
+      ),
+    );
     final newSaved = saved + (withdraw ? -amount : amount);
     final reached = newSaved >= goal.target && saved < goal.target;
-    await db.upsertGoal(goal.toCompanion(true).copyWith(
-          achievedAt: Value(newSaved >= goal.target ? (goal.achievedAt ?? DateTime.now()) : null),
-        ));
+    await db.upsertGoal(
+      goal.toCompanion(true).copyWith(achievedAt: Value(newSaved >= goal.target ? (goal.achievedAt ?? DateTime.now()) : null)),
+    );
 
     // Kabari anggota lain untuk setiap setoran/penarikan di target bersama.
     if (goal.isShared && ref.read(householdIdProvider) != null) {
       final name = ref.read(displayNameProvider).trim().split(' ').first;
       final who = name.isEmpty ? 'Pasanganmu' : name;
       final pct = goal.target <= 0 ? 0 : (newSaved / goal.target * 100).clamp(0, 999).round();
-      ref.read(realtimeProvider.notifier).notify(
+      ref
+          .read(realtimeProvider.notifier)
+          .notify(
             kind: 'goal',
             title: reached
                 ? 'Target ${goal.name} tercapai!'
                 : withdraw
-                    ? '$who menarik ${Rupiah.format(amount)} dari ${goal.name}'
-                    : '$who menabung ${Rupiah.format(amount)} untuk ${goal.name}',
+                ? '$who menarik ${Rupiah.format(amount)} dari ${goal.name}'
+                : '$who menabung ${Rupiah.format(amount)} untuk ${goal.name}',
             body: reached
                 ? '${Rupiah.format(goal.target)} sudah terkumpul penuh. Kerja bagus!'
                 : 'Terkumpul ${Rupiah.format(newSaved)} dari ${Rupiah.format(goal.target)} ($pct%)',
@@ -318,7 +359,11 @@ class _ContributeFormState extends ConsumerState<_ContributeForm> {
                 value: w.wallet.id,
                 child: Row(
                   children: [
-                    Container(width: 10, height: 10, decoration: BoxDecoration(color: Color(w.wallet.color), shape: BoxShape.circle)),
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(color: Color(w.wallet.color), shape: BoxShape.circle),
+                    ),
                     const SizedBox(width: 10),
                     Expanded(child: Text(w.wallet.name)),
                     Text(Rupiah.compact(w.balance), style: AuraType.bodySm.copyWith(color: p.onSurfaceVariant)),
@@ -326,9 +371,8 @@ class _ContributeFormState extends ConsumerState<_ContributeForm> {
                 ),
               ),
           ],
-          selectedOptionBuilder: (context, v) => Text(
-            v.isEmpty ? (widget.withdraw ? 'Tidak ke dompet' : 'Tidak dari dompet (catat saja)') : (chosen?.wallet.name ?? ''),
-          ),
+          selectedOptionBuilder: (context, v) =>
+              Text(v.isEmpty ? (widget.withdraw ? 'Tidak ke dompet' : 'Tidak dari dompet (catat saja)') : (chosen?.wallet.name ?? '')),
         ),
         Padding(
           padding: const EdgeInsets.only(top: 6),
@@ -336,8 +380,8 @@ class _ContributeFormState extends ConsumerState<_ContributeForm> {
             _walletId == null
                 ? 'Saldo dompet tidak berubah — cocok untuk tabungan yang disimpan terpisah.'
                 : widget.withdraw
-                    ? 'Saldo ${chosen?.wallet.name} bertambah sebesar nominal ini.'
-                    : 'Saldo ${chosen?.wallet.name} berkurang sebesar nominal ini.',
+                ? 'Saldo ${chosen?.wallet.name} bertambah sebesar nominal ini.'
+                : 'Saldo ${chosen?.wallet.name} berkurang sebesar nominal ini.',
             style: AuraType.bodySm.copyWith(color: p.onSurfaceVariant),
           ),
         ),
@@ -349,7 +393,11 @@ class _ContributeFormState extends ConsumerState<_ContributeForm> {
             if (_amount <= 0) return AuraToast.error(context, 'Masukkan nominal');
             if (widget.withdraw && _amount > widget.saved) return AuraToast.error(context, 'Melebihi saldo target');
             if (!widget.withdraw && chosen != null && _amount > chosen.balance) {
-              return AuraToast.error(context, 'Saldo ${chosen.wallet.name} tidak cukup', message: 'Tersedia ${Rupiah.format(chosen.balance)}');
+              return AuraToast.error(
+                context,
+                'Saldo ${chosen.wallet.name} tidak cukup',
+                message: 'Tersedia ${Rupiah.format(chosen.balance)}',
+              );
             }
             Navigator.of(context).pop((amount: _amount, note: _note.text.trim(), walletId: _walletId));
           },
@@ -401,7 +449,10 @@ class _ContributionSplit extends StatelessWidget {
                           alignment: Alignment.centerLeft,
                           child: FractionallySizedBox(
                             widthFactor: v,
-                            child: Container(margin: EdgeInsets.only(right: i == rows.length - 1 ? 0 : 2), color: toneOf(e.key)),
+                            child: Container(
+                              margin: EdgeInsets.only(right: i == rows.length - 1 ? 0 : 2),
+                              color: toneOf(e.key),
+                            ),
                           ),
                         ),
                       ),
@@ -467,7 +518,12 @@ class _Stat extends StatelessWidget {
         children: [
           Text(label, style: AuraType.labelSm.copyWith(color: p.onSurfaceVariant)),
           const SizedBox(height: 2),
-          Text(value, style: AuraType.headlineSm.copyWith(color: p.onSurface), maxLines: 1, overflow: TextOverflow.ellipsis),
+          Text(
+            value,
+            style: AuraType.headlineSm.copyWith(color: p.onSurface),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ],
       ),
     );
@@ -492,10 +548,7 @@ class _GoalRing extends StatelessWidget {
         tween: Tween(begin: 0, end: ratio.clamp(0, 1)),
         duration: const Duration(milliseconds: 1400),
         curve: Curves.easeOutCubic,
-        builder: (context, v, child) => CustomPaint(
-          painter: _RingPainter(v, color, p),
-          child: child,
-        ),
+        builder: (context, v, child) => CustomPaint(painter: _RingPainter(v, color, p), child: child),
         child: Center(child: child),
       ),
     );
@@ -577,7 +630,11 @@ Future<void> showCelebration(BuildContext context, String name) {
                     const ClayArt(ClayKind.trophy, size: 170),
                     Text('Target tercapai!', style: AuraType.headlineMd.copyWith(color: p.onSurface)),
                     const SizedBox(height: 4),
-                    Text('“$name” sudah terkumpul penuh. Kerja bagus.', textAlign: TextAlign.center, style: AuraType.bodyMd.copyWith(color: p.onSurfaceVariant)),
+                    Text(
+                      '“$name” sudah terkumpul penuh. Kerja bagus.',
+                      textAlign: TextAlign.center,
+                      style: AuraType.bodyMd.copyWith(color: p.onSurfaceVariant),
+                    ),
                     const SizedBox(height: AuraSpace.md),
                     ShadButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Mantap')),
                   ],
@@ -603,7 +660,15 @@ class _ConfettiState extends State<_Confetti> with SingleTickerProviderStateMixi
   final _rnd = math.Random();
   late final _pieces = List.generate(
     46,
-    (_) => (x: _rnd.nextDouble(), delay: _rnd.nextDouble() * 0.35, speed: 0.7 + _rnd.nextDouble() * 0.6, size: 6 + _rnd.nextDouble() * 8, spin: _rnd.nextDouble() * 6, tone: _rnd.nextInt(4), round: _rnd.nextBool()),
+    (_) => (
+      x: _rnd.nextDouble(),
+      delay: _rnd.nextDouble() * 0.35,
+      speed: 0.7 + _rnd.nextDouble() * 0.6,
+      size: 6 + _rnd.nextDouble() * 8,
+      spin: _rnd.nextDouble() * 6,
+      tone: _rnd.nextInt(4),
+      round: _rnd.nextBool(),
+    ),
   );
 
   @override
@@ -618,9 +683,7 @@ class _ConfettiState extends State<_Confetti> with SingleTickerProviderStateMixi
     final tones = [p.primaryContainer, p.secondaryContainer, p.tertiaryContainer, const Color(0xFFF2C46B)];
     return AnimatedBuilder(
       animation: _c,
-      builder: (context, _) => CustomPaint(
-        painter: _ConfettiPainter(_c.value, _pieces, tones),
-      ),
+      builder: (context, _) => CustomPaint(painter: _ConfettiPainter(_c.value, _pieces, tones)),
     );
   }
 }
@@ -645,7 +708,10 @@ class _ConfettiPainter extends CustomPainter {
       if (pc.round) {
         canvas.drawCircle(Offset.zero, pc.size / 2, paint);
       } else {
-        canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: Offset.zero, width: pc.size, height: pc.size * 0.5), const Radius.circular(2)), paint);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(Rect.fromCenter(center: Offset.zero, width: pc.size, height: pc.size * 0.5), const Radius.circular(2)),
+          paint,
+        );
       }
       canvas.restore();
     }
@@ -653,4 +719,32 @@ class _ConfettiPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ConfettiPainter o) => o.t != t;
+}
+
+/// Geser ke kiri untuk menghapus (sama seperti baris transaksi).
+class _SwipeToDelete extends StatelessWidget {
+  const _SwipeToDelete({super.key, required this.child, required this.onDelete});
+  final Widget child;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.aura;
+    return Dismissible(
+      key: key!,
+      direction: DismissDirection.endToStart,
+      dismissThresholds: const {DismissDirection.endToStart: 0.35},
+      onUpdate: (d) {
+        if (d.reached && !d.previousReached) HapticFeedback.mediumImpact();
+      },
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 24),
+        decoration: BoxDecoration(color: p.secondaryFixed, borderRadius: BorderRadius.circular(AuraRadius.md)),
+        child: AuraIcon(HugeIcons.strokeRoundedDelete02, color: p.secondary),
+      ),
+      onDismissed: (_) => onDelete(),
+      child: child,
+    );
+  }
 }

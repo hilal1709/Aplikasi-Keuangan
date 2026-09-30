@@ -100,6 +100,7 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
 
   @override
   Widget build(BuildContext context) {
+    AuraToast.attach(context);
     ref.watch(syncControllerProvider);
     ref.watch(realtimeProvider);
     // Peringatan budget 80% / 100% — hanya jika dipicu catatan dari HP ini,

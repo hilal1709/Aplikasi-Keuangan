@@ -42,6 +42,7 @@ class WalletsPage extends ConsumerWidget {
     final wallets = ref.watch(walletBalancesProvider).value;
     final total = ref.watch(totalBalanceProvider);
     final hidden = ref.watch(hideBalanceProvider);
+    final archived = (ref.watch(allWalletsProvider).value ?? const <Wallet>[]).where((w) => w.archived).toList();
 
     return AuraPage(
       title: 'Dompet',
@@ -84,6 +85,22 @@ class WalletsPage extends ConsumerWidget {
                     padding: const EdgeInsets.only(bottom: AuraSpace.md),
                     child: _WalletCard(w: w, hidden: hidden).staggerIn(i + 1),
                   ),
+                Text(
+                  'Ketuk dompet untuk melihat riwayat, tekan lama untuk mengubah atau menghapus.',
+                  textAlign: TextAlign.center,
+                  style: AuraType.bodySm.copyWith(color: p.outline),
+                ),
+                if (archived.isNotEmpty) ...[
+                  const SizedBox(height: AuraSpace.lg),
+                  const SectionHeader('Diarsipkan'),
+                  const SizedBox(height: AuraSpace.sm + 4),
+                  for (final w in archived)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _ArchivedWallet(wallet: w),
+                    ),
+                ],
+                const SizedBox(height: AuraSpace.xl),
               ],
             ),
           ),
@@ -299,6 +316,62 @@ class _WalletFormState extends ConsumerState<_WalletForm> {
         PrimaryAction(label: 'Simpan', onPressed: _save),
         if (widget.existing != null) PrimaryAction(label: 'Hapus dompet', destructive: true, onPressed: _delete),
       ],
+    );
+  }
+}
+
+/// Dompet yang diarsipkan: tersembunyi dari daftar & formulir, tetapi riwayatnya utuh.
+/// Bisa dipulihkan atau dihapus permanen dari sini.
+class _ArchivedWallet extends ConsumerWidget {
+  const _ArchivedWallet({required this.wallet});
+  final Wallet wallet;
+
+  Future<void> _options(BuildContext context, WidgetRef ref) async {
+    final db = ref.read(dbProvider);
+    final n = await db.countTxForWallet(wallet.id);
+    if (!context.mounted) return;
+    final choice = await showAuraModal<String>(
+      context,
+      title: wallet.name,
+      message: n == 0 ? 'Dompet ini diarsipkan dan tidak punya transaksi.' : 'Dompet ini diarsipkan. Riwayatnya ($n transaksi) masih tersimpan.',
+      actions: [
+        const AuraModalAction('Tutup'),
+        const AuraModalAction('Pulihkan', value: 'restore', primary: true),
+        AuraModalAction(n > 0 ? 'Hapus semua' : 'Hapus', value: 'delete', destructive: true),
+      ],
+    );
+    if (choice == null || !context.mounted) return;
+    if (choice == 'restore') {
+      await db.upsertWallet(wallet.toCompanion(true).copyWith(archived: const Value(false)));
+      if (context.mounted) AuraToast.success(context, '${wallet.name} dipulihkan');
+    } else {
+      final ok = await confirmDelete(
+        context,
+        title: 'Hapus ${wallet.name}?',
+        message: n > 0 ? '$n transaksi di dompet ini ikut dihapus.' : 'Dompet akan dihapus permanen.',
+      );
+      if (!ok) return;
+      await db.softDeleteWallet(wallet.id, withTransactions: true);
+      if (context.mounted) AuraToast.success(context, 'Dompet dihapus');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final p = context.aura;
+    return NeuPressable(
+      onTap: () => _options(context, ref),
+      radius: AuraRadius.md,
+      pressedScale: 0.98,
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          Container(width: 10, height: 10, decoration: BoxDecoration(color: Color(wallet.color), shape: BoxShape.circle)),
+          const SizedBox(width: 12),
+          Expanded(child: Text(wallet.name, style: AuraType.labelLg.copyWith(color: p.onSurfaceVariant))),
+          iconLabel(context, HugeIcons.strokeRoundedArchive02, 'Diarsipkan'),
+        ],
+      ),
     );
   }
 }
