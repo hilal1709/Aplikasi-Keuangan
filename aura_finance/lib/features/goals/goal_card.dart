@@ -10,6 +10,7 @@ import '../../core/utils/date_id.dart';
 import '../../core/utils/rupiah.dart';
 import '../../core/widgets/form_sheet.dart';
 import '../../core/widgets/neu_surface.dart';
+import '../../core/widgets/lottie.dart';
 import '../../core/widgets/primitives.dart';
 import '../../data/local/database.dart';
 import '../../data/providers.dart';
@@ -81,11 +82,17 @@ class GoalCard extends ConsumerWidget {
                   color: done ? p.tertiaryFixed : p.primaryFixed,
                   borderRadius: BorderRadius.circular(AuraRadius.pill),
                 ),
-                child: Text(
-                  '${pct.toStringAsFixed(pct < 10 && pct > 0 ? 1 : 0)}%',
-                  style: AuraType.labelSm.copyWith(color: done ? p.onTertiaryFixed : p.onPrimaryFixed),
+                // Persentase ikut bergulir naik bersama progress bar.
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(end: pct.toDouble()),
+                  duration: Motion.reduced(context) ? Duration.zero : const Duration(milliseconds: 1100),
+                  curve: Curves.easeOutExpo,
+                  builder: (context, v, _) => Text(
+                    '${v.toStringAsFixed(v < 10 && v > 0 ? 1 : 0)}%',
+                    style: AuraType.labelSm.copyWith(color: done ? p.onTertiaryFixed : p.onPrimaryFixed, fontFeatures: const [FontFeature.tabularFigures()]),
+                  ),
                 ),
-              ).popIn(delayMs: 250),
+              ).popIn(delayMs: 250).sparkleIf(done),
             ],
           ),
           const SizedBox(height: AuraSpace.sm + 4),
@@ -108,4 +115,9 @@ class GoalCard extends ConsumerWidget {
       ),
     );
   }
+}
+
+extension on Widget {
+  /// Lencana "Tercapai" diberi kilau berkedip.
+  Widget sparkleIf(bool on) => on ? AuraSparkle(size: 2.2, child: this) : this;
 }

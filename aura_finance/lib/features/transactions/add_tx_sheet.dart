@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hugeicons/hugeicons.dart';
+import 'package:lottie/lottie.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../core/widgets/feedback.dart';
@@ -18,6 +19,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/utils/date_id.dart';
 import '../../core/utils/rupiah.dart';
 import '../../core/widgets/neu_surface.dart';
+import '../../core/widgets/lottie.dart';
 import '../../core/widgets/primitives.dart';
 import '../../data/local/database.dart';
 import '../../data/owner.dart';
@@ -119,7 +121,7 @@ class _AddTxSheetState extends ConsumerState<AddTxSheet> {
     ));
     HapticFeedback.heavyImpact();
     setState(() => _saved = true);
-    await Future<void>.delayed(const Duration(milliseconds: 650));
+    await Future<void>.delayed(const Duration(milliseconds: 950));
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -532,7 +534,7 @@ class _SaveButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.aura;
-    return Center(
+    final button = Center(
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 420),
         curve: Curves.easeOutBack,
@@ -565,6 +567,20 @@ class _SaveButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+    if (!saved || Motion.reduced(context)) return button;
+    // Tersimpan: koin jatuh & memantul masuk ke tombol yang sudah mengecil.
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        button,
+        Positioned(
+          top: -58,
+          left: 0,
+          right: 0,
+          child: IgnorePointer(child: Center(child: Lottie.asset(AuraLottie.coin, width: 90, height: 120, repeat: false))),
+        ),
+      ],
     );
   }
 }

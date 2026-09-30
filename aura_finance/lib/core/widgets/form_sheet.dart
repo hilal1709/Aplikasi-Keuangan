@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -6,8 +9,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../icons/category_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
-import '../utils/rupiah.dart';
 import 'feedback.dart';
+import 'lottie.dart';
 import 'neu_surface.dart';
 import 'primitives.dart';
 
@@ -30,31 +33,35 @@ Future<T?> showFormSheet<T>(BuildContext context, {required String title, requir
       final p = context.aura;
       return Padding(
         padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-        child: Container(
-          decoration: BoxDecoration(
-            color: p.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(AuraRadius.xl)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(AuraSpace.margin, 10, AuraSpace.margin, AuraSpace.lg),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 5,
-                      decoration: BoxDecoration(color: p.outlineVariant, borderRadius: BorderRadius.circular(3)),
+        child: FormShake(
+          child: Container(
+            decoration: BoxDecoration(
+              color: p.surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(AuraRadius.xl)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(AuraSpace.margin, 10, AuraSpace.margin, AuraSpace.lg),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 5,
+                        decoration: BoxDecoration(color: p.outlineVariant, borderRadius: BorderRadius.circular(3)),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: AuraSpace.md),
-                  Text(title, style: AuraType.headlineMd.copyWith(color: p.onSurface)),
-                  const SizedBox(height: AuraSpace.md),
-                  builder(context),
-                ],
+                    const SizedBox(height: AuraSpace.md),
+                    SplitReveal(title, delayMs: 140, stepMs: 22, style: AuraType.headlineMd.copyWith(color: p.onSurface)),
+                    const SizedBox(height: AuraSpace.md),
+                    _SheetCascade(
+                      child: _FocusSpotlight(child: Builder(builder: builder)),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -70,9 +77,9 @@ class FieldLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 6, top: AuraSpace.sm + 4, left: 2),
-        child: Text(text, style: AuraType.labelMd.copyWith(color: context.aura.onSurfaceVariant)),
-      );
+    padding: const EdgeInsets.only(bottom: 6, top: AuraSpace.sm + 4, left: 2),
+    child: Text(text, style: AuraType.labelMd.copyWith(color: context.aura.onSurfaceVariant)),
+  ).cascadeIn(context);
 }
 
 /// Input nominal rupiah: hanya angka, dengan pratinjau format di bawahnya.
@@ -120,11 +127,15 @@ class _AmountFieldState extends State<AmountField> {
               ? const SizedBox(width: double.infinity)
               : Padding(
                   padding: const EdgeInsets.only(top: 6, left: 4),
-                  child: Text(Rupiah.format(v), style: AuraType.bodySm.copyWith(color: p.primary)),
+                  child: MoneyText(
+                    v,
+                    duration: const Duration(milliseconds: 450),
+                    style: AuraType.bodySm.copyWith(color: p.primary),
+                  ),
                 ),
         ),
       ],
-    );
+    ).cascadeIn(context);
   }
 }
 
@@ -141,7 +152,7 @@ class ToneSwatches extends StatelessWidget {
       spacing: 12,
       runSpacing: 12,
       children: [
-        for (final c in categoryTones)
+        for (final (i, c) in categoryTones.indexed)
           GestureDetector(
             onTap: () {
               HapticFeedback.selectionClick();
@@ -165,53 +176,124 @@ class ToneSwatches extends StatelessWidget {
                 ),
               ),
             ),
-          ),
+          ).popIn(delayMs: 200 + ((i - (categoryTones.length - 1) / 2).abs() * 45).round()),
       ],
-    );
+    ).cascadeIn(context);
   }
 }
 
 /// Tombol aksi utama bergradien di bagian bawah formulir.
-class PrimaryAction extends StatelessWidget {
+class PrimaryAction extends StatefulWidget {
   const PrimaryAction({super.key, required this.label, required this.onPressed, this.destructive = false});
   final String label;
-  final VoidCallback? onPressed;
+
+  /// Bila mengembalikan `Future`, tombol menampilkan animasi memuat sampai selesai.
+  final FutureOr<void> Function()? onPressed;
   final bool destructive;
+
+  @override
+  State<PrimaryAction> createState() => _PrimaryActionState();
+}
+
+class _PrimaryActionState extends State<PrimaryAction> with SingleTickerProviderStateMixin {
+  // Kilau menyapu tombol utama setiap ~3,4 dtk; di antara sapuan tidak ada frame yang digambar.
+  late final AnimationController _shine = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
+  Timer? _timer;
+  bool _busy = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final animate = !widget.destructive && !Motion.reduced(context);
+    if (animate && _timer == null) {
+      _timer = Timer.periodic(const Duration(milliseconds: 3400), (_) {
+        if (mounted && !_busy) _shine.forward(from: 0);
+      });
+    } else if (!animate) {
+      _timer?.cancel();
+      _timer = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _shine.dispose();
+    super.dispose();
+  }
+
+  Future<void> _tap() async {
+    final r = widget.onPressed?.call();
+    if (r is! Future || widget.destructive) return;
+    setState(() => _busy = true);
+    try {
+      await r;
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final p = context.aura;
-    final enabled = onPressed != null;
+    final enabled = widget.onPressed != null && !_busy;
+    final label = AnimatedSwitcher(
+      duration: Motion.base,
+      switchInCurve: Curves.easeOutBack,
+      transitionBuilder: (child, a) => FadeTransition(
+        opacity: a,
+        child: ScaleTransition(scale: a, child: child),
+      ),
+      child: _busy
+          ? const AuraLoader(key: ValueKey('busy'), width: 56, color: Colors.white, accent: Colors.white70)
+          : Text(
+              widget.label,
+              key: ValueKey(widget.label),
+              style: widget.destructive
+                  ? AuraType.labelLg.copyWith(color: p.error)
+                  : AuraType.bodyLg.copyWith(color: Colors.white, fontWeight: FontWeight.w700),
+            ),
+    );
     return Padding(
       padding: const EdgeInsets.only(top: AuraSpace.lg),
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 200),
-        opacity: enabled ? 1 : 0.55,
-        child: destructive
-            // Aksi berisiko: pil timbul netral dengan teks merah, tidak menonjol.
-            ? NeuPressable(
-                onTap: onPressed,
-                height: 54,
-                radius: AuraRadius.pill,
-                child: Center(child: Text(label, style: AuraType.labelLg.copyWith(color: p.error))),
-              )
-            : NeuPressable(
-                onTap: onPressed,
-                height: 56,
-                radius: AuraRadius.pill,
-                pressedDepth: 0,
-                color: p.primaryContainer,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(AuraRadius.pill),
-                    gradient: LinearGradient(colors: [p.primaryContainer, p.secondaryContainer]),
-                    boxShadow: [BoxShadow(color: p.primaryContainer.withValues(alpha: 0.35), blurRadius: 16, offset: const Offset(0, 6))],
-                  ),
-                  child: Center(
-                    child: Text(label, style: AuraType.bodyLg.copyWith(color: Colors.white, fontWeight: FontWeight.w700)),
+      child: AnimatedScale(
+        duration: Motion.base,
+        curve: Curves.easeOutBack,
+        scale: widget.onPressed != null ? 1 : 0.97,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 200),
+          opacity: widget.onPressed != null ? 1 : 0.55,
+          child: widget.destructive
+              // Aksi berisiko: pil timbul netral dengan teks merah, tidak menonjol.
+              ? NeuPressable(
+                  onTap: enabled ? _tap : null,
+                  height: 54,
+                  radius: AuraRadius.pill,
+                  child: Center(child: label),
+                )
+              : NeuPressable(
+                  onTap: enabled ? _tap : null,
+                  height: 56,
+                  radius: AuraRadius.pill,
+                  pressedDepth: 0,
+                  color: p.primaryContainer,
+                  child: AnimatedBuilder(
+                    animation: _shine,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(AuraRadius.pill),
+                        gradient: LinearGradient(colors: [p.primaryContainer, p.secondaryContainer]),
+                        boxShadow: [BoxShadow(color: p.primaryContainer.withValues(alpha: 0.35), blurRadius: 16, offset: const Offset(0, 6))],
+                      ),
+                      child: Center(child: label),
+                    ),
+                    builder: (context, child) {
+                      if (!_shine.isAnimating || _busy) return child!;
+                      return ShimmerSweep(t: Curves.easeInOutSine.transform(_shine.value), color: Colors.white.withValues(alpha: 0.35), radius: AuraRadius.pill, child: child!);
+                    },
                   ),
                 ),
-              ),
+        ),
       ),
     );
   }
@@ -223,10 +305,7 @@ Future<bool> confirmDelete(BuildContext context, {required String title, require
     context,
     title: title,
     message: message,
-    actions: [
-      const AuraModalAction('Batal', value: false),
-      AuraModalAction(confirmLabel, value: true, destructive: true),
-    ],
+    actions: [const AuraModalAction('Batal', value: false), AuraModalAction(confirmLabel, value: true, destructive: true)],
   );
   return ok ?? false;
 }
@@ -271,16 +350,40 @@ class ShareToggle extends StatelessWidget {
       padding: const EdgeInsets.only(top: AuraSpace.md),
       child: Row(
         children: [
-          AuraIcon(value ? HugeIcons.strokeRoundedUserGroup : HugeIcons.strokeRoundedLockKey, size: 20, color: p.primary),
+          AnimatedSwitcher(
+            duration: Motion.base,
+            transitionBuilder: (child, a) => RotationTransition(
+              turns: Tween(begin: 0.6, end: 1.0).animate(CurvedAnimation(parent: a, curve: Curves.easeOutBack)),
+              child: ScaleTransition(scale: a, child: child),
+            ),
+            child: AuraIcon(
+              value ? HugeIcons.strokeRoundedUserGroup : HugeIcons.strokeRoundedLockKey,
+              key: ValueKey(value),
+              size: 20,
+              color: p.primary,
+            ),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title, style: AuraType.labelLg.copyWith(color: p.onSurface)),
-                Text(
-                  locked ? 'Sudah dibagikan — tidak bisa dijadikan pribadi lagi' : (value ? sharedHint : privateHint),
-                  style: AuraType.bodySm.copyWith(color: p.onSurfaceVariant),
+                AnimatedSwitcher(
+                  duration: Motion.fast,
+                  layoutBuilder: (current, previous) => Stack(alignment: Alignment.centerLeft, children: [...previous, ?current]),
+                  transitionBuilder: (child, a) => FadeTransition(
+                    opacity: a,
+                    child: SlideTransition(
+                      position: Tween(begin: const Offset(0, 0.4), end: Offset.zero).animate(a),
+                      child: child,
+                    ),
+                  ),
+                  child: Text(
+                    locked ? 'Sudah dibagikan — tidak bisa dijadikan pribadi lagi' : (value ? sharedHint : privateHint),
+                    key: ValueKey('$locked$value'),
+                    style: AuraType.bodySm.copyWith(color: p.onSurfaceVariant),
+                  ),
                 ),
               ],
             ),
@@ -288,7 +391,7 @@ class ShareToggle extends StatelessWidget {
           ShadSwitch(value: value, onChanged: locked ? null : onChanged),
         ],
       ),
-    );
+    ).cascadeIn(context);
   }
 }
 
@@ -303,10 +406,7 @@ class ShareBadge extends StatelessWidget {
     final p = context.aura;
     return Container(
       padding: EdgeInsets.fromLTRB(avatars.isEmpty ? 8 : 3, 3, 8, 3),
-      decoration: BoxDecoration(
-        color: shared ? p.primaryFixed : p.surfaceHigh,
-        borderRadius: BorderRadius.circular(AuraRadius.pill),
-      ),
+      decoration: BoxDecoration(color: shared ? p.primaryFixed : p.surfaceHigh, borderRadius: BorderRadius.circular(AuraRadius.pill)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -319,11 +419,199 @@ class ShareBadge extends StatelessWidget {
               ),
             )
           else
-            AuraIcon(shared ? HugeIcons.strokeRoundedUserGroup : HugeIcons.strokeRoundedLockKey, size: 13, color: shared ? p.onPrimaryFixed : p.onSurfaceVariant),
+            AuraIcon(
+              shared ? HugeIcons.strokeRoundedUserGroup : HugeIcons.strokeRoundedLockKey,
+              size: 13,
+              color: shared ? p.onPrimaryFixed : p.onSurfaceVariant,
+            ),
           const SizedBox(width: 5),
-          Text(shared ? 'Bersama' : 'Pribadi', style: AuraType.labelSm.copyWith(color: shared ? p.onPrimaryFixed : p.onSurfaceVariant, letterSpacing: 0)),
+          Text(
+            shared ? 'Bersama' : 'Pribadi',
+            style: AuraType.labelSm.copyWith(color: shared ? p.onPrimaryFixed : p.onSurfaceVariant, letterSpacing: 0),
+          ),
         ],
       ),
+    );
+  }
+}
+
+// =============================================================================
+// Animasi isi sheet
+
+/// Membagikan urutan kemunculan komponen di dalam satu sheet, sehingga label,
+/// input & tombol mengalir masuk berurutan tanpa tiap form mengatur indeks sendiri.
+class _SheetCascade extends InheritedWidget {
+  _SheetCascade({required super.child});
+  final _next = <int>[0];
+
+  int take() => _next[0]++;
+
+  @override
+  bool updateShouldNotify(_SheetCascade old) => false;
+}
+
+extension SheetCascadeX on Widget {
+  /// Di dalam [showFormSheet]: muncul bertingkat sesuai urutan dibangun. Di luar sheet: apa adanya.
+  Widget cascadeIn(BuildContext context) {
+    final c = context.getInheritedWidgetOfExactType<_SheetCascade>();
+    return c == null ? this : staggerIn(c.take(), stepMs: 40, baseMs: 160);
+  }
+}
+
+/// Membungkus isi sheet: menggoyang sheet saat validasi gagal ([FormShake.of]).
+class FormShake extends StatefulWidget {
+  const FormShake({super.key, required this.child});
+  final Widget child;
+
+  /// Goyangkan sheet terdekat (dipanggil otomatis oleh `AuraToast.error`).
+  static void shake(BuildContext context) => context.findAncestorStateOfType<_FormShakeState>()?.shake();
+
+  @override
+  State<FormShake> createState() => _FormShakeState();
+}
+
+class _FormShakeState extends State<FormShake> {
+  int _n = 0;
+
+  void shake() {
+    HapticFeedback.heavyImpact();
+    setState(() => _n++);
+  }
+
+  @override
+  Widget build(BuildContext context) => ShakeX(trigger: _n, child: widget.child);
+}
+
+/// Cincin sorot yang "meluncur" dari satu input ke input berikutnya saat fokus berpindah.
+class _FocusSpotlight extends StatefulWidget {
+  const _FocusSpotlight({required this.child});
+  final Widget child;
+
+  @override
+  State<_FocusSpotlight> createState() => _FocusSpotlightState();
+}
+
+class _FocusSpotlightState extends State<_FocusSpotlight> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  // Posisi input diukur tiap frame hanya sebentar setelah ada perubahan (fokus, keyboard,
+  // gulir, ukuran) — tidak terus-menerus, supaya layar bisa diam & hemat baterai.
+  late final Ticker _ticker = createTicker(_tick);
+  Duration _until = Duration.zero;
+  Duration _elapsed = Duration.zero;
+  Rect? _rect;
+
+  @override
+  void initState() {
+    super.initState();
+    FocusManager.instance.addListener(_onFocus);
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    FocusManager.instance.removeListener(_onFocus);
+    WidgetsBinding.instance.removeObserver(this);
+    _ticker.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() => _kick();
+
+  void _onFocus() {
+    if (_focusedInput() != null) {
+      _kick();
+    } else {
+      _ticker.stop();
+      if (_rect != null && mounted) setState(() => _rect = null);
+    }
+  }
+
+  void _kick() {
+    if (!mounted || _focusedInput() == null) return;
+    if (_ticker.isActive) {
+      _until = _elapsed + const Duration(milliseconds: 700);
+    } else {
+      _until = const Duration(milliseconds: 700);
+      _ticker.start();
+    }
+  }
+
+  void _tick(Duration elapsed) {
+    _elapsed = elapsed;
+    _measure();
+    if (elapsed >= _until) _ticker.stop();
+  }
+
+  /// Elemen [ShadInput] yang sedang fokus di dalam sheet ini, bila ada.
+  Element? _focusedInput() {
+    final fc = FocusManager.instance.primaryFocus?.context;
+    if (fc == null || !mounted) return null;
+    Element? input;
+    var mine = false;
+    (fc as Element).visitAncestorElements((e) {
+      if (input == null && e.widget is ShadInput) input = e;
+      if (e.widget == widget) {
+        mine = true;
+        return false;
+      }
+      return true;
+    });
+    return mine ? input : null;
+  }
+
+  void _measure() {
+    final input = _focusedInput()?.findRenderObject();
+    final me = context.findRenderObject();
+    if (input is! RenderBox || me is! RenderBox || !input.attached || !input.hasSize) return;
+    final r = input.localToGlobal(Offset.zero, ancestor: me) & input.size;
+    if (r != _rect) setState(() => _rect = r);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.aura;
+    final r = _rect;
+    final reduced = Motion.reduced(context);
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        NotificationListener<Notification>(
+          onNotification: (n) {
+            if (n is ScrollNotification || n is SizeChangedLayoutNotification) _kick();
+            return false;
+          },
+          child: widget.child,
+        ),
+        if (r != null)
+          AnimatedPositioned(
+            duration: reduced ? Duration.zero : const Duration(milliseconds: 420),
+            curve: Curves.easeOutBack,
+            left: r.left - 3,
+            top: r.top - 3,
+            width: r.width + 6,
+            height: r.height + 6,
+            child: IgnorePointer(
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: reduced ? 1 : 0, end: 1),
+                duration: const Duration(milliseconds: 360),
+                curve: Curves.easeOutCubic,
+                builder: (context, t, _) => DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(AuraRadius.md),
+                    border: Border.all(color: p.primary.withValues(alpha: 0.55 * t), width: 1.6),
+                    boxShadow: [
+                      BoxShadow(
+                        color: p.primaryContainer.withValues(alpha: 0.28 * t),
+                        blurRadius: 16 * t,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

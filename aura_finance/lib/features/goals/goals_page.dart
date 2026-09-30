@@ -44,7 +44,7 @@ class GoalsPage extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Target Tabungan', style: AuraType.headlineLg.copyWith(color: p.onSurface)),
+                  SplitReveal('Target Tabungan', delayMs: 100, style: AuraType.headlineLg.copyWith(color: p.onSurface)),
                   Row(
                     children: [
                       Text('Terkumpul ', style: AuraType.bodyMd.copyWith(color: p.onSurfaceVariant)),

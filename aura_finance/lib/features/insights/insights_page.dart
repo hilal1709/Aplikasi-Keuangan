@@ -70,7 +70,7 @@ class _InsightsPageState extends ConsumerState<InsightsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Insight', style: AuraType.headlineLg.copyWith(color: p.onSurface)),
+                  SplitReveal('Insight', delayMs: 100, style: AuraType.headlineLg.copyWith(color: p.onSurface)),
                   AnimatedSwitcher(
                     duration: const Duration(milliseconds: 250),
                     child: Text(DateId.month(_month), key: ValueKey(_month), style: AuraType.bodyMd.copyWith(color: p.onSurfaceVariant)),
@@ -96,7 +96,7 @@ class _InsightsPageState extends ConsumerState<InsightsPage> {
             const SizedBox(width: AuraSpace.md),
             Expanded(child: _Summary(label: 'Pengeluaran', value: totals.expense, color: p.secondary, hidden: hidden)),
           ],
-        ).staggerIn(i++),
+        ).reveal(delayMs: math.min(i++, 8) * 45),
         const SizedBox(height: AuraSpace.md),
         _Summary(
           label: totals.net >= 0 ? 'Tersisa bulan ini' : 'Defisit bulan ini',
@@ -104,7 +104,7 @@ class _InsightsPageState extends ConsumerState<InsightsPage> {
           color: totals.net >= 0 ? p.primary : p.error,
           hidden: hidden,
           wide: true,
-        ).staggerIn(i++),
+        ).reveal(delayMs: math.min(i++, 8) * 45),
         const SizedBox(height: AuraSpace.lg),
         NeuSurface(
           radius: AuraRadius.xl,
@@ -120,7 +120,7 @@ class _InsightsPageState extends ConsumerState<InsightsPage> {
                 _CategoryDonut(spend: spend, cats: cats, total: totals.expense, hidden: hidden),
             ],
           ),
-        ).staggerIn(i++),
+        ).reveal(delayMs: math.min(i++, 8) * 45),
         const SizedBox(height: AuraSpace.lg),
         NeuSurface(
           radius: AuraRadius.xl,
@@ -151,7 +151,7 @@ class _InsightsPageState extends ConsumerState<InsightsPage> {
               }),
             ],
           ),
-        ).staggerIn(i++),
+        ).reveal(delayMs: math.min(i++, 8) * 45),
         const SizedBox(height: AuraSpace.lg),
         Row(
           children: [
@@ -163,7 +163,7 @@ class _InsightsPageState extends ConsumerState<InsightsPage> {
               child: _LinkTile(icon: HugeIcons.strokeRoundedRepeat, label: 'Berulang', onTap: () => context.push('/recurring')),
             ),
           ],
-        ).staggerIn(i++),
+        ).reveal(delayMs: math.min(i++, 8) * 45),
         const SizedBox(height: AuraSpace.lg),
         Row(
           children: [
@@ -185,7 +185,7 @@ class _InsightsPageState extends ConsumerState<InsightsPage> {
               ),
             ),
           ],
-        ).staggerIn(i++),
+        ).reveal(delayMs: math.min(i++, 8) * 45),
       ],
     );
   }

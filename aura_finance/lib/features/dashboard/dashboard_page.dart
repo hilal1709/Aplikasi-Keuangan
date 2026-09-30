@@ -51,17 +51,18 @@ class DashboardPage extends ConsumerWidget {
           const SizedBox(height: AuraSpace.sm),
           const ScopeSwitch().staggerIn(i++),
           const SizedBox(height: AuraSpace.sm),
-          const _HeroCard().staggerIn(i++),
+          // Kartu saldo: parallax saat digulir, kilau sekali saat muncul.
+          ScrollParallax(factor: 0.22, child: const _HeroCard().shimmerOnce(delayMs: 900, radius: AuraRadius.xl).staggerIn(i++)),
           const SizedBox(height: AuraSpace.lg),
           const _QuickActions().staggerIn(i++),
           const SizedBox(height: AuraSpace.lg),
-          const _CashflowCard().staggerIn(i++),
+          const _CashflowCard().reveal(delayMs: _d(i++)),
           const _UpcomingBills(),
           const SizedBox(height: AuraSpace.lg),
           SectionHeader(
             'Target Tabungan',
             trailing: PillLink(goals.isEmpty ? 'Buat target' : 'Semua', onTap: () => context.go('/goals')),
-          ).staggerIn(i++),
+          ).reveal(delayMs: _d(i++)),
           const SizedBox(height: AuraSpace.sm + 4),
           if (goals.isEmpty)
             NeuSurface(
@@ -78,12 +79,12 @@ class DashboardPage extends ConsumerWidget {
                   ),
                 ],
               ),
-            ).staggerIn(i++)
+            ).reveal(delayMs: _d(i++))
           else
             for (final (g, saved) in goals.take(2))
-              Padding(padding: const EdgeInsets.only(bottom: AuraSpace.md), child: GoalCard(goal: g, saved: saved).staggerIn(i++)),
+              Padding(padding: const EdgeInsets.only(bottom: AuraSpace.md), child: GoalCard(goal: g, saved: saved).reveal(delayMs: _d(i++))),
           const SizedBox(height: AuraSpace.md),
-          SectionHeader('Transaksi Terkini', trailing: PillLink('Lihat semua', onTap: () => context.push('/history'))).staggerIn(i++),
+          SectionHeader('Transaksi Terkini', trailing: PillLink('Lihat semua', onTap: () => context.push('/history'))).reveal(delayMs: _d(i++)),
           const SizedBox(height: AuraSpace.sm + 4),
           if (recent != null && recent.isEmpty)
             const ClayEmpty(
@@ -93,12 +94,15 @@ class DashboardPage extends ConsumerWidget {
             )
           else
             for (final tx in recent ?? const <TxEntry>[])
-              Padding(padding: const EdgeInsets.only(bottom: 12), child: TxTile(tx).staggerIn(i++)),
+              Padding(padding: const EdgeInsets.only(bottom: 12), child: TxTile(tx).reveal(delayMs: _d(i++), dy: 28)),
         ],
       ),
     );
   }
 }
+
+/// Jeda bertingkat untuk elemen yang muncul saat di-scroll (dibatasi agar tidak menunggu lama).
+int _d(int i) => math.min(i, 8) * 45;
 
 class _Greeting extends ConsumerWidget {
   const _Greeting();
@@ -124,11 +128,10 @@ class _Greeting extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              SplitReveal(
                 name.isEmpty ? DateId.greeting() : '${DateId.greeting()}, ${name.split(' ').first}',
+                delayMs: 150,
                 style: AuraType.headlineMd.copyWith(color: p.onSurface),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 6),
               Row(

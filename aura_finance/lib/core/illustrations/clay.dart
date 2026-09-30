@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
+import '../widgets/lottie.dart';
 
 /// Ilustrasi bergaya clay/3D lembut, digambar dengan kode.
 /// Setiap ilustrasi punya gerak "idle" halus: melayang, dan bayangannya ikut mengecil.
@@ -413,7 +414,7 @@ class ClayEmpty extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ClayArt(kind, size: size),
+          AuraSparkle(child: ClayArt(kind, size: size)),
           const SizedBox(height: AuraSpace.sm),
           Text(title, style: AuraType.headlineSm.copyWith(color: p.onSurface), textAlign: TextAlign.center),
           const SizedBox(height: 4),

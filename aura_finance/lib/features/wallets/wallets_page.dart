@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -86,7 +88,7 @@ class WalletsPage extends ConsumerWidget {
                 for (final (i, w) in wallets.indexed)
                   Padding(
                     padding: const EdgeInsets.only(bottom: AuraSpace.md),
-                    child: _WalletCard(w: w, hidden: hidden).staggerIn(i + 1),
+                    child: _WalletCard(w: w, hidden: hidden).shimmerOnce(delayMs: 500 + math.min(i, 6) * 120, radius: AuraRadius.lg).staggerIn(i + 1),
                   ),
                 Text(
                   'Ketuk dompet untuk melihat riwayat, tekan lama untuk mengubah atau menghapus.',
@@ -143,7 +145,19 @@ class _WalletCard extends ConsumerWidget {
                 ),
               ),
             ),
-            Positioned(left: 0, top: 18, bottom: 18, child: Container(width: 4, decoration: BoxDecoration(color: tone, borderRadius: const BorderRadius.horizontal(right: Radius.circular(4))))),
+            // Pita tumbuh dari tengah saat kartu muncul.
+            Positioned(
+              left: 0,
+              top: 18,
+              bottom: 18,
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: Motion.reduced(context) ? 1 : 0, end: 1),
+                duration: const Duration(milliseconds: 900),
+                curve: const Interval(0.3, 1, curve: Curves.elasticOut),
+                builder: (context, t, child) => Transform.scale(scaleY: t, child: child),
+                child: Container(width: 4, decoration: BoxDecoration(color: tone, borderRadius: const BorderRadius.horizontal(right: Radius.circular(4)))),
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(AuraSpace.lg, AuraSpace.md, AuraSpace.md, AuraSpace.md),
               child: Row(

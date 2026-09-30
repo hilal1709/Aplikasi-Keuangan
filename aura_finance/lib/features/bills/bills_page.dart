@@ -144,6 +144,11 @@ class _BillTile extends ConsumerWidget {
       message: bill.walletId == null ? 'Ditandai lunas tanpa mencatat pengeluaran.' : 'Pengeluaran otomatis dicatat.',
       tone: AuraTone.success,
     );
+    // Tagihan terakhir bulan ini lunas: rayakan dengan konfeti.
+    final monthEnd = DateId.nextMonthStart(DateId.monthStart(now));
+    final left = (ref.read(billsProvider).value ?? const <Bill>[])
+        .where((b) => b.id != bill.id && b.paidAt == null && b.dueDate.isBefore(monthEnd));
+    if (left.isEmpty && context.mounted) showLottieBurst(context, AuraLottie.confetti);
   }
 
   /// Tagihan lunas: batalkan pelunasan (salah tekan) atau hapus dari daftar.
@@ -234,8 +239,16 @@ class _BillTile extends ConsumerWidget {
                 ],
               ),
             ),
-            if (!paid)
-              NeuPressable(
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 520),
+              switchInCurve: Curves.easeOutBack,
+              transitionBuilder: (child, a) => ScaleTransition(
+                scale: a,
+                child: RotationTransition(turns: Tween(begin: -0.25, end: 0.0).animate(a), child: FadeTransition(opacity: a, child: child)),
+              ),
+              child: !paid
+                  ? NeuPressable(
+                key: const ValueKey('pay'),
                 onTap: () => _pay(context, ref),
                 radius: AuraRadius.pill,
                 color: p.tertiaryFixed,
@@ -249,8 +262,8 @@ class _BillTile extends ConsumerWidget {
                   ],
                 ),
               )
-            else
-              AuraIcon(HugeIcons.strokeRoundedCheckmarkCircle02, color: p.tertiary).popIn(),
+                  : AuraIcon(HugeIcons.strokeRoundedCheckmarkCircle02, key: const ValueKey('paid'), color: p.tertiary),
+            ),
           ],
         ),
       ),

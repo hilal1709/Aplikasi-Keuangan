@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
+import 'primitives.dart' show Motion;
 
 /// Permukaan neumorph dengan kedalaman kontinu:
 /// `1` = timbul (extruded), `0` = rata, `-1` = cekung (inset).
@@ -114,6 +115,8 @@ class NeuPressable extends StatefulWidget {
     this.pressedScale = 0.96,
     this.haptic = true,
     this.semanticLabel,
+    this.tilt = true,
+    this.glow = true,
   });
 
   final Widget child;
@@ -131,37 +134,63 @@ class NeuPressable extends StatefulWidget {
   final bool haptic;
   final String? semanticLabel;
 
+  /// Miring 3D ke arah titik sentuh saat ditekan.
+  final bool tilt;
+
+  /// Cahaya lembut yang menyebar dari titik sentuh.
+  final bool glow;
+
   @override
   State<NeuPressable> createState() => _NeuPressableState();
 }
 
-class _NeuPressableState extends State<NeuPressable> with SingleTickerProviderStateMixin {
+class _NeuPressableState extends State<NeuPressable> with TickerProviderStateMixin {
   late final AnimationController _c = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 110),
     reverseDuration: const Duration(milliseconds: 260),
   );
   late final Animation<double> _t = CurvedAnimation(parent: _c, curve: Curves.easeOut, reverseCurve: Curves.elasticOut);
+  // Cahaya yang menyebar dari titik sentuh.
+  late final AnimationController _glow = AnimationController(vsync: this, duration: const Duration(milliseconds: 560));
+  Offset _at = Offset.zero;
+  Offset _tilt = Offset.zero;
 
   @override
   void dispose() {
     _c.dispose();
+    _glow.dispose();
     super.dispose();
   }
 
-  void _down() => _c.forward();
+  void _down(TapDownDetails d) {
+    final size = context.size;
+    if (size != null && !Motion.reduced(context)) {
+      _at = d.localPosition;
+      if (widget.tilt) {
+        _tilt = Offset(
+          ((d.localPosition.dx / size.width) * 2 - 1).clamp(-1.0, 1.0),
+          ((d.localPosition.dy / size.height) * 2 - 1).clamp(-1.0, 1.0),
+        );
+      }
+      if (widget.glow) _glow.forward(from: 0);
+    }
+    _c.forward();
+  }
+
   void _up() => _c.reverse();
 
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null || widget.onLongPress != null;
+    final p = context.aura;
     return Semantics(
       button: true,
       enabled: enabled,
       label: widget.semanticLabel,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTapDown: enabled ? (_) => _down() : null,
+        onTapDown: enabled ? _down : null,
         onTapUp: enabled ? (_) => _up() : null,
         onTapCancel: enabled ? _up : null,
         onTap: widget.onTap == null
@@ -177,22 +206,43 @@ class _NeuPressableState extends State<NeuPressable> with SingleTickerProviderSt
                 widget.onLongPress!();
               },
         child: AnimatedBuilder(
-          animation: _t,
+          animation: Listenable.merge([_t, _glow]),
           builder: (context, child) {
             final t = _t.value.clamp(0.0, 1.0);
             final depth = ui.lerpDouble(widget.restDepth, widget.pressedDepth, t)!;
             final scale = ui.lerpDouble(1, widget.pressedScale, _t.value)!;
-            return Transform.scale(
-              scale: scale,
+            // Miring ringan ke arah jari (perspektif 3D), kembali memantul saat dilepas.
+            final tilt = Matrix4.identity()
+              ..setEntry(3, 2, 0.0012)
+              ..rotateX(-_tilt.dy * 0.07 * _t.value)
+              ..rotateY(_tilt.dx * 0.07 * _t.value)
+              ..scaleByDouble(scale, scale, 1, 1);
+            final glowing = _glow.isAnimating;
+            return Transform(
+              alignment: Alignment.center,
+              transform: tilt,
               child: NeuSurface(
                 depth: depth,
                 radius: widget.radius,
                 color: widget.color,
-                padding: widget.padding,
                 width: widget.width,
                 height: widget.height,
                 circle: widget.circle,
-                child: child,
+                child: Stack(
+                  fit: StackFit.passthrough,
+                  children: [
+                    widget.padding == null ? child! : Padding(padding: widget.padding!, child: child),
+                    if (glowing)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(widget.circle ? AuraRadius.pill : widget.radius),
+                            child: CustomPaint(painter: _GlowPainter(_at, _glow.value, p.primaryContainer)),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             );
           },
@@ -201,4 +251,27 @@ class _NeuPressableState extends State<NeuPressable> with SingleTickerProviderSt
       ),
     );
   }
+}
+
+class _GlowPainter extends CustomPainter {
+  _GlowPainter(this.at, this.t, this.color);
+  final Offset at;
+  final double t;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final r = size.longestSide * (0.25 + 1.1 * Curves.easeOutCubic.transform(t));
+    final a = 0.28 * (1 - Curves.easeIn.transform(t));
+    canvas.drawCircle(
+      at,
+      r,
+      Paint()
+        ..shader = RadialGradient(colors: [color.withValues(alpha: a), color.withValues(alpha: 0)])
+            .createShader(Rect.fromCircle(center: at, radius: r)),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_GlowPainter old) => old.t != t || old.at != at || old.color != color;
 }

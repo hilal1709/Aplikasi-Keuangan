@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -167,7 +169,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
           spacing: 10,
           runSpacing: 10,
           children: [
-            for (final key in categoryIcons.keys)
+            for (final (i, key) in categoryIcons.keys.indexed)
               GestureDetector(
                 onTap: () {
                   HapticFeedback.selectionClick();
@@ -184,7 +186,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                   ),
                   child: Center(child: AuraIcon(categoryIcon(key), size: 20, color: key == _icon ? Color(_color) : p.onSurfaceVariant)),
                 ),
-              ),
+              ).popIn(delayMs: 180 + math.min(i, 24) * 18),
           ],
         ),
         const FieldLabel('Warna'),

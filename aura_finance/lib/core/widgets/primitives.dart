@@ -274,14 +274,326 @@ class Motion {
 
 extension StaggerX on Widget {
   /// Entrance standar: naik + fade + sedikit membesar, dengan jeda bertingkat per indeks.
-  Widget staggerIn(int index, {int stepMs = 45, int baseMs = 0}) => _StaggerIn(delay: baseMs + index * stepMs, child: this);
+  /// Jeda dibatasi [_maxSteps] langkah: item yang baru dibangun saat daftar digulir
+  /// langsung beranimasi, tidak menunggu antrean indeksnya.
+  Widget staggerIn(int index, {int stepMs = 45, int baseMs = 0}) =>
+      _StaggerIn(delay: baseMs + math.min(index, _maxSteps) * stepMs, child: this);
 
   /// Muncul membal (scale + fade) — untuk centang, lencana, dan elemen kecil.
   Widget popIn({int delayMs = 0}) => _PopIn(delay: delayMs, child: this);
 
   /// Masuk dari samping (mis. item daftar), bertingkat per indeks.
   Widget slideInX(int index, {double dx = 28, int stepMs = 40}) =>
-      _StaggerIn(delay: index * stepMs, dx: dx, dy: 0, child: this);
+      _StaggerIn(delay: math.min(index, _maxSteps) * stepMs, dx: dx, dy: 0, child: this);
+
+  /// Muncul saat masuk layar (seperti GSAP ScrollTrigger), bukan saat dibangun.
+  Widget reveal({int delayMs = 0, double dy = 40, double scale = 0.94}) =>
+      ScrollReveal(delayMs: delayMs, dy: dy, scale: scale, child: this);
+
+  /// Kilau cahaya yang menyapu sekali (kartu, lencana).
+  Widget shimmerOnce({int delayMs = 400, Color? color, double radius = 0}) =>
+      _Shimmer(delayMs: delayMs, color: color, radius: radius, child: this);
+}
+
+const _maxSteps = 8;
+
+/// Animasi dipicu posisi scroll: mulai saat bagian atas elemen melewati
+/// [trigger] × tinggi layar (default 92%), lalu tidak diulang.
+class ScrollReveal extends StatefulWidget {
+  const ScrollReveal({super.key, required this.child, this.delayMs = 0, this.dy = 40, this.scale = 0.94, this.trigger = 0.92});
+  final Widget child;
+  final int delayMs;
+  final double dy;
+  final double scale;
+  final double trigger;
+
+  @override
+  State<ScrollReveal> createState() => _ScrollRevealState();
+}
+
+class _ScrollRevealState extends State<ScrollReveal> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 820));
+  late final Animation<double> _a = CurvedAnimation(parent: _c, curve: Curves.easeOutExpo);
+  ScrollPosition? _pos;
+  bool _fired = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (Motion.reduced(context)) {
+      _fire(immediate: true);
+      return;
+    }
+    final pos = Scrollable.maybeOf(context)?.position;
+    if (pos != _pos) {
+      _pos?.removeListener(_schedule);
+      _pos = pos;
+      if (!_fired) _pos?.addListener(_schedule);
+    }
+    _schedule();
+  }
+
+  bool _pending = false;
+
+  // Listener scroll dipanggil sebelum layout diperbarui: ukur posisi setelah frame selesai.
+  void _schedule() {
+    if (_pending || _fired) return;
+    _pending = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pending = false;
+      _check();
+    });
+  }
+
+  void _check() {
+    if (_fired || !mounted) return;
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.attached || !box.hasSize) return;
+    final top = box.localToGlobal(Offset.zero).dy;
+    if (top < MediaQuery.sizeOf(context).height * widget.trigger) _fire();
+  }
+
+  void _fire({bool immediate = false}) {
+    if (_fired) return;
+    _fired = true;
+    _pos?.removeListener(_schedule);
+    if (immediate) {
+      _c.value = 1;
+    } else {
+      Future.delayed(Duration(milliseconds: widget.delayMs), () {
+        if (mounted) _c.forward();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _pos?.removeListener(_schedule);
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _a,
+        child: widget.child,
+        builder: (context, child) {
+          final t = _a.value;
+          return Opacity(
+            opacity: t.clamp(0, 1),
+            child: Transform.translate(
+              offset: Offset(0, widget.dy * (1 - t)),
+              child: Transform.scale(scale: widget.scale + (1 - widget.scale) * t, child: child),
+            ),
+          );
+        },
+      );
+}
+
+/// Parallax terikat scroll (seperti GSAP `scrub`): elemen bergerak lebih lambat
+/// dari konten, mengecil & memudar saat digulir menjauh; membesar sedikit saat ditarik.
+class ScrollParallax extends StatelessWidget {
+  const ScrollParallax({super.key, required this.child, this.factor = 0.35, this.fadeOver = 360, this.minScale = 0.92});
+  final Widget child;
+  final double factor;
+  final double fadeOver;
+  final double minScale;
+
+  @override
+  Widget build(BuildContext context) {
+    final pos = Scrollable.maybeOf(context)?.position;
+    if (pos == null || Motion.reduced(context)) return child;
+    return AnimatedBuilder(
+      animation: pos,
+      child: child,
+      builder: (context, child) {
+        final px = pos.hasPixels ? pos.pixels : 0.0;
+        if (px <= 0) {
+          return Transform.scale(scale: 1 + (-px / 900).clamp(0.0, 0.08), child: child);
+        }
+        final t = (px / fadeOver).clamp(0.0, 1.0);
+        return Transform.translate(
+          offset: Offset(0, px * factor),
+          child: Transform.scale(
+            scale: 1 - (1 - minScale) * t,
+            child: Opacity(opacity: 1 - 0.7 * t, child: child),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Teks yang muncul per huruf (seperti GSAP SplitText): tiap huruf naik,
+/// sedikit berputar dan memudar masuk secara bertingkat.
+class SplitReveal extends StatefulWidget {
+  const SplitReveal(this.text, {super.key, this.style, this.delayMs = 0, this.stepMs = 28, this.maxLines = 1});
+  final String text;
+  final TextStyle? style;
+  final int delayMs;
+  final int stepMs;
+  final int maxLines;
+
+  @override
+  State<SplitReveal> createState() => _SplitRevealState();
+}
+
+class _SplitRevealState extends State<SplitReveal> with SingleTickerProviderStateMixin {
+  static const _charMs = 520;
+  late final String _text = widget.text;
+  late final List<String> _chars = _text.characters.toList();
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: Duration(milliseconds: _charMs + widget.stepMs * math.max(0, _chars.length - 1)),
+  );
+  bool _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (Motion.reduced(context)) {
+      _c.value = 1;
+    } else {
+      Future.delayed(Duration(milliseconds: widget.delayMs), () {
+        if (mounted) _c.forward();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final plain = Text(widget.text, style: widget.style, maxLines: widget.maxLines, overflow: TextOverflow.ellipsis);
+    // Teks berubah, atau animasi selesai: pakai teks biasa agar kerning & ellipsis rapi.
+    if (widget.text != _text) return plain;
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, _) {
+        if (_c.isCompleted) return plain;
+        final nowMs = _c.value * _c.duration!.inMilliseconds;
+        return Text.rich(
+          TextSpan(children: [
+            for (final (i, ch) in _chars.indexed)
+              WidgetSpan(
+                alignment: PlaceholderAlignment.baseline,
+                baseline: TextBaseline.alphabetic,
+                child: _SplitChar(ch, style: widget.style, t: ((nowMs - i * widget.stepMs) / _charMs).clamp(0.0, 1.0)),
+              ),
+          ]),
+          maxLines: widget.maxLines,
+          overflow: TextOverflow.clip,
+        );
+      },
+    );
+  }
+}
+
+class _SplitChar extends StatelessWidget {
+  const _SplitChar(this.ch, {required this.t, this.style});
+  final String ch;
+  final double t;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    final e = Curves.easeOutBack.transform(t);
+    return Opacity(
+      opacity: Curves.easeOut.transform(t),
+      child: Transform.translate(
+        offset: Offset(0, 16 * (1 - e)),
+        child: Transform.rotate(angle: 0.3 * (1 - e), alignment: Alignment.bottomLeft, child: Text(ch, style: style)),
+      ),
+    );
+  }
+}
+
+class _Shimmer extends StatefulWidget {
+  const _Shimmer({required this.delayMs, required this.child, this.color, this.radius = 0});
+  final int delayMs;
+  final Color? color;
+  final double radius;
+  final Widget child;
+
+  @override
+  State<_Shimmer> createState() => _ShimmerState();
+}
+
+class _ShimmerState extends State<_Shimmer> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1300));
+  bool _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (Motion.reduced(context)) return;
+    Future.delayed(Duration(milliseconds: widget.delayMs), () {
+      if (mounted) _c.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _c,
+        child: widget.child,
+        builder: (context, child) {
+          if (!_c.isAnimating) return child!;
+          return ShimmerSweep(t: Curves.easeInOutCubic.transform(_c.value), color: widget.color, radius: widget.radius, child: child!);
+        },
+      );
+}
+
+/// Pita cahaya miring di posisi [t] (0 = kiri luar, 1 = kanan luar), dilapis di atas [child].
+class ShimmerSweep extends StatelessWidget {
+  const ShimmerSweep({super.key, required this.t, required this.child, this.color, this.width = 0.22, this.radius = 0});
+  final double t;
+  final Widget child;
+  final Color? color;
+  final double width;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final light = color ?? Colors.white.withValues(alpha: 0.4);
+    final c = -width + t * (1 + 2 * width);
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        child,
+        Positioned.fill(
+          child: IgnorePointer(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(radius),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: const Alignment(-1, -0.5),
+                    end: const Alignment(1, 0.5),
+                    colors: [light.withValues(alpha: 0), light, light.withValues(alpha: 0)],
+                    stops: [(c - width).clamp(0.0, 1.0), c.clamp(0.0, 1.0), (c + width).clamp(0.0, 1.0)],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// Bergoyang horizontal sekali tiap [trigger] bertambah (validasi gagal).

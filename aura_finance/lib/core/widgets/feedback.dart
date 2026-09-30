@@ -9,6 +9,7 @@ import '../icons/category_icons.dart';
 import '../illustrations/clay.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
+import 'form_sheet.dart' show FormShake;
 import 'lottie.dart';
 import 'neu_surface.dart';
 import 'primitives.dart';
@@ -104,7 +105,11 @@ abstract final class AuraToast {
   }
 
   static void success(BuildContext c, String title, {String? message}) => show(c, title: title, message: message, tone: AuraTone.success);
-  static void error(BuildContext c, String title, {String? message}) => show(c, title: title, message: message, tone: AuraTone.error);
+  /// Error dari dalam form sheet juga menggoyang sheet-nya (umpan balik validasi).
+  static void error(BuildContext c, String title, {String? message}) {
+    FormShake.shake(c);
+    show(c, title: title, message: message, tone: AuraTone.error);
+  }
   static void info(BuildContext c, String title, {String? message}) => show(c, title: title, message: message);
 
   static void hide() => _current?.dismiss();

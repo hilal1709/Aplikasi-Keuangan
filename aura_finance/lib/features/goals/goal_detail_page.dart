@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hugeicons/hugeicons.dart';
+import 'package:lottie/lottie.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../core/widgets/feedback.dart';
@@ -618,6 +619,12 @@ Future<void> showCelebration(BuildContext context, String name) {
       return Stack(
         children: [
           const Positioned.fill(child: IgnorePointer(child: _Confetti())),
+          // Letupan konfeti Lottie dari bawah, di atas hujan konfeti.
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Lottie.asset(AuraLottie.confetti, repeat: false, fit: BoxFit.cover, alignment: Alignment.bottomCenter),
+            ),
+          ),
           Center(
             child: Material(
               color: Colors.transparent,

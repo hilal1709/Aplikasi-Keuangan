@@ -41,7 +41,7 @@ class ProfilePage extends ConsumerWidget {
       physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
       padding: EdgeInsets.fromLTRB(AuraSpace.margin, top + AuraSpace.md, AuraSpace.margin, 140),
       children: [
-        Text('Profil', style: AuraType.headlineLg.copyWith(color: p.onSurface)).staggerIn(i++),
+        SplitReveal('Profil', delayMs: 100, style: AuraType.headlineLg.copyWith(color: p.onSurface)).staggerIn(i++),
         const SizedBox(height: AuraSpace.lg),
         NeuPressable(
           onTap: () => _editName(context, ref, name),

@@ -10,6 +10,76 @@ abstract final class AuraLottie {
   static const loading = 'assets/lottie/loading.json';
   static const success = 'assets/lottie/success.json';
   static const error = 'assets/lottie/error.json';
+  static const coin = 'assets/lottie/coin.json';
+  static const confetti = 'assets/lottie/confetti.json';
+  static const sparkle = 'assets/lottie/sparkle.json';
+}
+
+/// Memutar animasi Lottie sekali di lapisan paling atas layar (mis. konfeti),
+/// tanpa menghalangi sentuhan, lalu membersihkannya sendiri.
+void showLottieBurst(BuildContext context, String asset, {BoxFit fit = BoxFit.cover, Alignment alignment = Alignment.bottomCenter}) {
+  if (Motion.reduced(context)) return;
+  final overlay = Overlay.maybeOf(context, rootOverlay: true);
+  if (overlay == null) return;
+  late final OverlayEntry entry;
+  var removed = false;
+  void remove() {
+    if (removed) return;
+    removed = true;
+    entry.remove();
+  }
+
+  entry = OverlayEntry(
+    builder: (_) => Positioned.fill(
+      child: IgnorePointer(
+        child: Lottie.asset(
+          asset,
+          repeat: false,
+          fit: fit,
+          alignment: alignment,
+          onLoaded: (c) => Future.delayed(c.duration + const Duration(milliseconds: 100), remove),
+        ),
+      ),
+    ),
+  );
+  overlay.insert(entry);
+  // Jaga-jaga bila aset gagal dimuat.
+  Future.delayed(const Duration(seconds: 6), remove);
+}
+
+/// Kilau kecil berkedip di sekitar [child] (ilustrasi kosong, lencana "Tercapai").
+class AuraSparkle extends StatelessWidget {
+  const AuraSparkle({super.key, required this.child, this.size = 1.3});
+  final Widget child;
+
+  /// Ukuran area kilau relatif terhadap [child].
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    if (Motion.reduced(context)) return child;
+    return Stack(
+      alignment: Alignment.center,
+      clipBehavior: Clip.none,
+      children: [
+        child,
+        Positioned.fill(
+          child: IgnorePointer(
+            child: LayoutBuilder(
+              builder: (context, box) {
+                final side = box.biggest.shortestSide * size;
+                return OverflowBox(
+                  maxWidth: side,
+                  maxHeight: side,
+                  child: Lottie.asset(AuraLottie.sparkle, width: side, height: side, fit: BoxFit.contain),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// Tiga titik yang melompat — indikator memuat standar aplikasi.
