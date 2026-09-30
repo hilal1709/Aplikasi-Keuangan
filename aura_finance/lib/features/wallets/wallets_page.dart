@@ -40,7 +40,7 @@ class WalletsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final p = context.aura;
     final wallets = ref.watch(walletBalancesProvider).value;
-    final total = ref.watch(netWorthProvider);
+    final total = ref.watch(totalBalanceProvider);
     final hidden = ref.watch(hideBalanceProvider);
 
     return AuraPage(
@@ -288,23 +288,13 @@ class _WalletFormState extends ConsumerState<_WalletForm> {
         AmountField(initial: _initial, onChanged: (v) => _initial = v),
         const FieldLabel('Warna'),
         ToneSwatches(value: _color, onChanged: (c) => setState(() => _color = c)),
-        const SizedBox(height: AuraSpace.md),
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Dompet bersama', style: AuraType.labelLg.copyWith(color: p.onSurface)),
-                  Text(
-                    _shared ? 'Terlihat oleh semua anggota rumah tangga' : 'Hanya terlihat olehmu',
-                    style: AuraType.bodySm.copyWith(color: p.onSurfaceVariant),
-                  ),
-                ],
-              ),
-            ),
-            ShadSwitch(value: _shared, onChanged: (v) => setState(() => _shared = v)),
-          ],
+        ShareToggle(
+          title: 'Dompet bersama',
+          value: _shared,
+          locked: widget.existing?.isShared == true,
+          sharedHint: 'Saldo & transaksinya terlihat semua anggota',
+          privateHint: 'Hanya kamu yang melihat saldo & transaksinya',
+          onChanged: (v) => setState(() => _shared = v),
         ),
         PrimaryAction(label: 'Simpan', onPressed: _save),
         if (widget.existing != null) PrimaryAction(label: 'Hapus dompet', destructive: true, onPressed: _delete),

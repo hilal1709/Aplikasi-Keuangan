@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -29,6 +30,9 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   String _search = '';
   Timer? _debounce;
   TxKind? _kind;
+
+  /// Filter khusus "Tabungan": hanya setoran/penarikan target dari dompet.
+  bool _savingsOnly = false;
   late String? _walletId = widget.walletId;
   String? _member;
   DateTime _month = DateId.monthStart(DateTime.now());
@@ -80,7 +84,22 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                     clipBehavior: Clip.none,
                     children: [
                       for (final (k, label) in [(null, 'Semua'), (TxKind.expense, 'Keluar'), (TxKind.income, 'Masuk'), (TxKind.transfer, 'Transfer')])
-                        _Chip(label: label, active: _kind == k, onTap: () => setState(() => _kind = k)),
+                        _Chip(
+                          label: label,
+                          active: !_savingsOnly && _kind == k,
+                          onTap: () => setState(() {
+                            _kind = k;
+                            _savingsOnly = false;
+                          }),
+                        ),
+                      _Chip(
+                        label: 'Tabungan',
+                        active: _savingsOnly,
+                        onTap: () => setState(() {
+                          _savingsOnly = !_savingsOnly;
+                          _kind = null;
+                        }),
+                      ),
                       _divider(p),
                       for (final w in wallets)
                         _Chip(
@@ -115,40 +134,64 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
             createdBy: _member,
             search: _search,
           ),
-          builder: (context, snap) {
-            final rows = snap.data;
-            if (rows == null) return const SliverToBoxAdapter(child: SizedBox(height: 200));
-            if (rows.isEmpty) {
-              return SliverToBoxAdapter(
-                child: ClayEmpty(
-                  kind: ClayKind.search,
-                  title: _search.isEmpty && _kind == null && _walletId == null ? 'Bulan ini masih kosong' : 'Tidak ada yang cocok',
-                  message: _search.isEmpty && _kind == null && _walletId == null
-                      ? 'Transaksi yang kamu catat akan muncul di sini, dikelompokkan per hari.'
-                      : 'Coba ubah kata kunci atau filter.',
+          builder: (context, txSnap) => StreamBuilder<List<WalletContribution>>(
+            stream: db.watchWalletContributions(
+              from: _month,
+              to: DateId.nextMonthStart(_month),
+              walletId: _walletId,
+              createdBy: _member,
+            ),
+            builder: (context, cSnap) {
+              final txs = txSnap.data;
+              if (txs == null || cSnap.data == null) return const SliverToBoxAdapter(child: SizedBox(height: 200));
+              final q = _search.trim().toLowerCase();
+              final contribs = _kind != null
+                  ? const <WalletContribution>[]
+                  : cSnap.data!
+                      .where((c) => q.isEmpty || c.contribution.note.toLowerCase().contains(q) || (c.goal?.name.toLowerCase().contains(q) ?? false))
+                      .toList();
+              // Satu daftar gabungan, diurutkan dari yang terbaru.
+              final rows = <_Row>[
+                if (!_savingsOnly) for (final t in txs) _Row(t.occurredAt, tx: t),
+                for (final c in contribs) _Row(c.contribution.occurredAt, contribution: c),
+              ]..sort((a, b) => b.at.compareTo(a.at));
+              final filtered = _search.isNotEmpty || _kind != null || _walletId != null || _savingsOnly;
+              if (rows.isEmpty) {
+                return SliverToBoxAdapter(
+                  child: ClayEmpty(
+                    kind: ClayKind.search,
+                    title: filtered ? 'Tidak ada yang cocok' : 'Bulan ini masih kosong',
+                    message: _savingsOnly
+                        ? 'Setoran ke target yang diambil dari dompet akan muncul di sini.'
+                        : filtered
+                            ? 'Coba ubah kata kunci atau filter.'
+                            : 'Transaksi yang kamu catat akan muncul di sini, dikelompokkan per hari.',
+                  ),
+                );
+              }
+              final groups = <DateTime, List<_Row>>{};
+              for (final r in rows) {
+                groups.putIfAbsent(DateId.dateOnly(r.at), () => []).add(r);
+              }
+              var index = 0;
+              return SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: AuraSpace.margin),
+                sliver: SliverList.list(
+                  children: [
+                    for (final e in groups.entries) ...[
+                      _DayHeader(day: e.key, txs: [for (final r in e.value) if (r.tx != null) r.tx!], hidden: hidden).staggerIn(index++, stepMs: 30),
+                      for (final r in e.value)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: (r.tx != null ? TxTile(r.tx!, showDate: false) : _ContributionTile(r.contribution!)).staggerIn(index++, stepMs: 30),
+                        ),
+                      const SizedBox(height: AuraSpace.sm),
+                    ],
+                  ],
                 ),
               );
-            }
-            final groups = <DateTime, List<TxEntry>>{};
-            for (final t in rows) {
-              groups.putIfAbsent(DateId.dateOnly(t.occurredAt), () => []).add(t);
-            }
-            final entries = groups.entries.toList();
-            var index = 0;
-            return SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: AuraSpace.margin),
-              sliver: SliverList.list(
-                children: [
-                  for (final e in entries) ...[
-                    _DayHeader(day: e.key, txs: e.value, hidden: hidden).staggerIn(index++, stepMs: 30),
-                    for (final t in e.value)
-                      Padding(padding: const EdgeInsets.only(bottom: 12), child: TxTile(t, showDate: false).staggerIn(index++, stepMs: 30)),
-                    const SizedBox(height: AuraSpace.sm),
-                  ],
-                ],
-              ),
-            );
-          },
+            },
+          ),
         ),
       ],
     );
@@ -218,6 +261,75 @@ class _Chip extends StatelessWidget {
             Text(label, style: AuraType.labelMd.copyWith(color: active ? p.primary : p.onSurfaceVariant)),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _Row {
+  _Row(this.at, {this.tx, this.contribution});
+  final DateTime at;
+  final TxEntry? tx;
+  final WalletContribution? contribution;
+}
+
+/// Setoran ke / penarikan dari target yang memakai dompet.
+/// Bukan pengeluaran: uangnya dipindah ke tabungan, jadi tampil seperti transfer.
+class _ContributionTile extends ConsumerWidget {
+  const _ContributionTile(this.item);
+  final WalletContribution item;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final p = context.aura;
+    final c = item.contribution;
+    final goal = item.goal;
+    final hidden = ref.watch(hideBalanceProvider);
+    final wallet = ref.watch(walletMapProvider)[c.walletId]?.wallet.name ?? 'Dompet';
+    final by = (ref.watch(membersProvider).value ?? const <Member>[]).where((m) => m.userId == c.createdBy).firstOrNull;
+    final deposit = c.amount >= 0;
+    final goalName = goal?.name ?? 'target terhapus';
+    final title = deposit ? 'Setor ke $goalName' : 'Tarik dari $goalName';
+    final subtitle = [
+      DateId.time(c.occurredAt),
+      deposit ? '$wallet → Tabungan' : 'Tabungan → $wallet',
+      if (c.note.isNotEmpty) c.note,
+    ].join(' • ');
+
+    return NeuPressable(
+      onTap: goal == null || goal.deletedAt != null ? null : () => context.push('/goal/${goal.id}'),
+      radius: AuraRadius.md,
+      pressedScale: 0.98,
+      padding: const EdgeInsets.all(10),
+      child: Row(
+        children: [
+          CategoryBadge(icon: 'coins', color: goal?.color ?? p.primary.toARGB32()),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: AuraType.bodyLg.copyWith(color: p.onSurface, fontWeight: FontWeight.w600)),
+                Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: AuraType.bodySm.copyWith(color: p.onSurfaceVariant)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                hidden ? 'Rp •••' : Rupiah.format(-c.amount, signed: !deposit),
+                style: AuraType.labelLg.copyWith(color: p.onSurfaceVariant, fontWeight: FontWeight.w700),
+              ),
+              if (by != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(by.displayName, style: AuraType.labelSm.copyWith(color: p.outline)),
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }

@@ -3,8 +3,10 @@
 // Endpoint (semuanya butuh header `Authorization: Bearer <JWT Neon Auth>`):
 //   POST /pusher/auth   {socket_id, channel_name}    -> tanda tangan channel privat Pusher
 //   GET  /beams/token?user_id=...                    -> token Pusher Beams untuk push ke user ini
-//   POST /notify        {household_id, kind, title, body, socket_id?}
-//        -> event realtime ke anggota lain + push notification ke HP mereka
+//   POST /notify        {household_id, kind, title, body, socket_id?, tables?, changes?}
+//        -> event realtime ke anggota lain + push notification ke HP mereka.
+//           `changes` (baris yang baru disimpan, sudah disaring pengirim) diteruskan
+//           supaya HP penerima bisa langsung menampilkannya sebelum menarik dari Neon.
 //
 // Keanggotaan rumah tangga dicek lewat Neon Data API memakai JWT pengguna,
 // jadi aturan RLS di Postgres tetap menjadi satu-satunya sumber kebenaran.
@@ -44,11 +46,36 @@ async function householdMembers(env, token, householdId) {
   return (await res.json()).map((r) => String(r.user_id));
 }
 
+// Cache keanggotaan per isolate (60 detik): menghindari satu perjalanan ke Neon
+// (us-east-2) di setiap sinyal. Keluar/dikeluarkan dari rumah tangga berlaku paling lambat 60 detik.
+const memberCache = new Map();
+const MEMBER_TTL_MS = 60_000;
+
 async function requireMember(env, user, householdId) {
   if (!/^[0-9a-f-]{36}$/i.test(householdId || '')) throw new HttpError(400, 'bad household_id');
+  const key = `${user.userId}|${householdId}`;
+  const hit = memberCache.get(key);
+  if (hit && hit.exp > Date.now()) return hit.members;
   const members = await householdMembers(env, user.token, householdId);
   if (!members.includes(user.userId)) throw new HttpError(403, 'not a member');
+  memberCache.set(key, { members, exp: Date.now() + MEMBER_TTL_MS });
   return members;
+}
+
+const SYNC_TABLES = ['wallets', 'categories', 'transactions', 'budgets', 'goals', 'goal_contributions', 'recurring_rules', 'bills'];
+const MAX_CHANGES_BYTES = 8000; // batas event Pusher 10 KB, sisakan ruang untuk field lain
+
+/** Hanya tabel yang dikenal dan baris milik rumah tangga ini yang diteruskan. */
+function sanitizeChanges(changes, householdId) {
+  if (!changes || typeof changes !== 'object') return undefined;
+  const out = {};
+  for (const [table, rows] of Object.entries(changes)) {
+    if (!SYNC_TABLES.includes(table) || !Array.isArray(rows)) continue;
+    const ok = rows.filter((r) => r && typeof r === 'object' && r.household_id === householdId && typeof r.id === 'string');
+    if (ok.length) out[table] = ok;
+  }
+  if (!Object.keys(out).length) return undefined;
+  return JSON.stringify(out).length <= MAX_CHANGES_BYTES ? out : undefined;
 }
 
 // --- Kriptografi kecil untuk Pusher -------------------------------------------------
@@ -103,7 +130,7 @@ async function publishToUsers(env, users, title, body, data) {
 
 // --- Rute ------------------------------------------------------------------------------
 
-async function handle(request, env) {
+async function handle(request, env, ctx) {
   const url = new URL(request.url);
 
   if (url.pathname === '/health') return json({ ok: true });
@@ -135,18 +162,24 @@ async function handle(request, env) {
 
   if (url.pathname === '/notify' && request.method === 'POST') {
     const user = await verifyUser(request, env);
-    const { household_id: householdId, kind, title, body, socket_id: socketId } = await request.json();
+    const { household_id: householdId, kind, title, body, socket_id: socketId, tables, changes } = await request.json();
     if (!['tx', 'budget', 'goal', 'bill', 'sync'].includes(kind)) throw new HttpError(400, 'bad kind');
     const members = await requireMember(env, user, householdId);
     const clip = (s, n) => String(s || '').slice(0, n);
 
-    // Realtime: minta perangkat lain di rumah tangga menarik data terbaru.
-    await triggerChannel(env, `private-household-${householdId}`, 'changed', { by: user.userId, kind, title: clip(title, 80), body: clip(body, 160) }, socketId);
+    // Realtime: kirim isi perubahan (bila muat) + daftar tabel yang perlu ditarik.
+    const event = { by: user.userId, kind, title: clip(title, 80), body: clip(body, 160) };
+    const t = Array.isArray(tables) ? tables.filter((x) => SYNC_TABLES.includes(x)) : [];
+    if (t.length) event.tables = t;
+    const c = sanitizeChanges(changes, householdId);
+    if (c) event.changes = c;
+    await triggerChannel(env, `private-household-${householdId}`, 'changed', event, socketId);
 
     // Push: ke anggota lain saja (bukan pengirim), kecuali "sync" yang hanya realtime.
+    // Dikirim di latar supaya balasan ke pengirim tidak menunggu Beams.
     if (kind !== 'sync' && title) {
       const others = members.filter((id) => id !== user.userId);
-      await publishToUsers(env, others, clip(title, 80), clip(body, 160), { kind, household_id: householdId });
+      ctx.waitUntil(publishToUsers(env, others, clip(title, 80), clip(body, 160), { kind, household_id: householdId }));
     }
     return json({ ok: true });
   }
@@ -155,9 +188,9 @@ async function handle(request, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     try {
-      return await handle(request, env);
+      return await handle(request, env, ctx);
     } catch (e) {
       const status = e instanceof HttpError ? e.status : 500;
       if (status === 500) console.log('error', e?.stack || e);

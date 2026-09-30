@@ -12,8 +12,10 @@ const _uuid = Uuid();
 Future<int> runDueRecurring(AppDatabase db, {DateTime? now}) async {
   final n = now ?? DateTime.now();
   final rules = await db.watchRecurring().first;
+  // Hanya aturan yang dompetnya ada di HP ini (dompet pribadi pasangan tidak terlihat).
+  final wallets = {for (final w in await db.watchAllWallets().first) w.id};
   var created = 0;
-  for (final r in rules.where((r) => r.active)) {
+  for (final r in rules.where((r) => r.active && wallets.contains(r.walletId))) {
     var next = r.nextRun;
     var guard = 0;
     while (!next.isAfter(n) && guard++ < 60) {

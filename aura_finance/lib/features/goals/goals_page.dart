@@ -18,6 +18,8 @@ import '../../core/widgets/primitives.dart';
 import '../../data/local/database.dart';
 import '../../data/owner.dart';
 import '../../data/providers.dart';
+import '../../core/utils/rupiah.dart';
+import '../../services/realtime.dart';
 import 'goal_card.dart';
 
 class GoalsPage extends ConsumerWidget {
@@ -63,9 +65,21 @@ class GoalsPage extends ConsumerWidget {
             message: 'Beri nama, tentukan nominal, lalu sisihkan sedikit demi sedikit. Kami hitung perkiraan kapan tercapainya.',
             action: ShadButton(onPressed: () => showGoalForm(context), child: const Text('Buat target')),
           ).staggerIn(1)
-        else
+        else if (ref.watch(householdIdProvider) == null)
           for (final (i, (g, saved)) in (goals ?? const <(Goal, int)>[]).indexed)
-            Padding(padding: const EdgeInsets.only(bottom: AuraSpace.md), child: GoalCard(goal: g, saved: saved).staggerIn(i + 1)),
+            Padding(padding: const EdgeInsets.only(bottom: AuraSpace.md), child: GoalCard(goal: g, saved: saved).staggerIn(i + 1))
+        else
+          for (final (title, list) in [
+            ('Bersama', (goals ?? const <(Goal, int)>[]).where((g) => g.$1.isShared).toList()),
+            ('Pribadi', (goals ?? const <(Goal, int)>[]).where((g) => !g.$1.isShared).toList()),
+          ])
+            if (list.isNotEmpty) ...[
+              SectionHeader(title == 'Bersama' ? 'Target bersama' : 'Target pribadiku'),
+              const SizedBox(height: AuraSpace.sm + 4),
+              for (final (i, (g, saved)) in list.indexed)
+                Padding(padding: const EdgeInsets.only(bottom: AuraSpace.md), child: GoalCard(goal: g, saved: saved).staggerIn(i + 1)),
+              const SizedBox(height: AuraSpace.sm),
+            ],
       ],
     );
   }
@@ -99,6 +113,7 @@ class _GoalFormState extends ConsumerState<_GoalForm> {
   late String _art = widget.existing?.illustration ?? 'travel';
   late int _color = widget.existing?.color ?? categoryTones.first;
   late DateTime? _deadline = widget.existing?.deadline;
+  late bool _shared = widget.existing?.isShared ?? true;
 
   @override
   void dispose() {
@@ -125,7 +140,17 @@ class _GoalFormState extends ConsumerState<_GoalForm> {
           deadline: Value(_deadline),
           achievedAt: Value(e?.achievedAt),
           archived: Value(e?.archived ?? false),
+          isShared: Value(_shared),
         ));
+    // Target bersama baru dikabarkan supaya pasangan bisa ikut menabung.
+    if (e == null && _shared && ref.read(householdIdProvider) != null) {
+      final name = ref.read(displayNameProvider).trim().split(' ').first;
+      ref.read(realtimeProvider.notifier).notify(
+            kind: 'goal',
+            title: '${name.isEmpty ? 'Pasanganmu' : name} membuat target bersama: ${_name.text.trim()}',
+            body: 'Target ${Rupiah.format(_target)}${_deadline == null ? '' : ' sebelum ${DateId.month(_deadline!)}'}. Yuk ikut menabung!',
+          );
+    }
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -204,6 +229,15 @@ class _GoalFormState extends ConsumerState<_GoalForm> {
         ),
         const FieldLabel('Warna'),
         ToneSwatches(value: _color, onChanged: (c) => setState(() => _color = c)),
+        if (ref.watch(householdIdProvider) != null)
+          ShareToggle(
+            title: 'Target bersama',
+            value: _shared,
+            locked: widget.existing?.isShared == true,
+            sharedHint: 'Kamu & pasangan bisa melihat dan menyetor',
+            privateHint: 'Tabungan pribadimu — pasangan tidak melihatnya',
+            onChanged: (v) => setState(() => _shared = v),
+          ),
         PrimaryAction(label: 'Simpan target', onPressed: _save),
       ],
     );

@@ -7,9 +7,14 @@ import '../remote/neon.dart';
 import '../local/database.dart';
 
 class SyncReport {
-  const SyncReport(this.pushed, this.newTx);
+  const SyncReport(this.pushed, this.newTx, [this.changes = const {}]);
   final int pushed;
   final List<TxEntry> newTx;
+
+  /// Baris yang baru terkirim & boleh dilihat anggota lain, per tabel remote
+  /// (format Postgres). Ikut dikirim lewat Pusher supaya HP pasangan bisa
+  /// langsung menampilkannya tanpa menunggu menarik dari Neon.
+  final Map<String, List<Map<String, dynamic>>> changes;
 }
 
 /// Deskripsi satu tabel yang disinkronkan.
@@ -58,25 +63,90 @@ class SyncEngine {
   /// Klien Data API dengan JWT segar untuk satu putaran sinkron.
   late PostgrestClient client;
 
-  /// Menjalankan satu putaran sinkron. Laporan berisi berapa baris terkirim
-  /// dan transaksi baru milik perangkat ini (untuk notifikasi ke pasangan).
+  /// Menjalankan satu putaran sinkron penuh: kirim lalu tarik.
   Future<SyncReport> run(String householdId) async {
+    final report = await push(householdId);
+    await pull(householdId);
+    return report;
+  }
+
+  /// Mengirim semua baris `dirty` ke Neon (semua tabel paralel).
+  Future<SyncReport> push(String householdId) async {
     client = await Neon.db();
     final specs = syncSpecs(db);
+    final pushedPerSpec = await Future.wait(specs.map((s) => _push(s, householdId)));
     var pushed = 0;
     final newTx = <TxEntry>[];
-    for (final s in specs) {
-      final rows = await _push(s, householdId);
+    final changes = <String, List<Map<String, dynamic>>>{};
+    for (final (i, s) in specs.indexed) {
+      final rows = pushedPerSpec[i];
+      if (rows.isEmpty) continue;
       pushed += rows.length;
       if (identical(s.local, db.txEntries)) {
         newTx.addAll(rows.cast<TxEntry>().where((t) => t.deletedAt == null && t.updatedAt.difference(t.createdAt).inSeconds.abs() < 5));
       }
+      final visible = <Map<String, dynamic>>[];
+      for (final d in rows) {
+        if (await _visibleToOthers(s, d)) visible.add(_toRemote(s, d.toJson()));
+      }
+      changes[s.remote] = visible;
     }
-    for (final s in specs) {
-      await _pull(s, householdId);
+    return SyncReport(pushed, newTx, changes);
+  }
+
+  /// Menarik perubahan dari Neon. Semua tabel diminta paralel (hemat waktu karena
+  /// server jauh), lalu diterapkan berurutan induk dulu baru anak.
+  /// [tables] membatasi ke tabel tertentu (nama remote), mis. dari sinyal realtime.
+  Future<void> pull(String householdId, {Set<String>? tables}) async {
+    client = await Neon.db();
+    final specs = syncSpecs(db).where((s) => tables == null || tables.contains(s.remote)).toList();
+    final fetched = await Future.wait([
+      for (final s in specs) _fetch(s, householdId),
+      if (tables == null) pullMembers(householdId).then((_) => const <Map<String, dynamic>>[]),
+    ]);
+    for (final (i, s) in specs.indexed) {
+      final rows = fetched[i];
+      if (rows.isEmpty) continue;
+      await _apply(s, rows);
+      await prefs.setString(_markKey(s, householdId), rows.last['server_updated_at'] as String);
     }
-    await pullMembers(householdId);
-    return SyncReport(pushed, newTx);
+  }
+
+  /// Menerapkan baris yang datang lewat Pusher (format Postgres) dengan aturan
+  /// last-write-wins yang sama. Tanda tarik tidak dimajukan, jadi tarikan
+  /// berikutnya tetap mengambil versi resmi dari server.
+  Future<int> applyChanges(Map<String, dynamic> changes, String householdId) async {
+    var n = 0;
+    for (final s in syncSpecs(db)) {
+      final raw = changes[s.remote];
+      if (raw is! List || raw.isEmpty) continue;
+      final rows = raw.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).where((m) => m['household_id'] == householdId).toList();
+      await _apply(s, rows);
+      n += rows.length;
+    }
+    return n;
+  }
+
+  String _markKey(SyncSpec s, String householdId) => 'sync_mark_${s.remote}_$householdId';
+
+  /// Meniru aturan RLS di sisi pengirim: baris pribadi tidak ikut disiarkan.
+  Future<bool> _visibleToOthers(SyncSpec s, DataClass d) async {
+    Future<bool> walletShared(String? id) async {
+      if (id == null) return true;
+      final w = await (db.select(db.wallets)..where((x) => x.id.equals(id))).getSingleOrNull();
+      return w?.isShared ?? false;
+    }
+
+    return switch (d) {
+      Wallet w => w.isShared,
+      TxEntry t => await walletShared(t.walletId),
+      Goal g => g.isShared,
+      GoalContribution c => (await (db.select(db.goals)..where((x) => x.id.equals(c.goalId))).getSingleOrNull())?.isShared ?? false,
+      Budget b => b.isShared,
+      RecurringRule r => await walletShared(r.walletId),
+      Bill b => await walletShared(b.walletId),
+      _ => true,
+    };
   }
 
   Stream<int> watchPending() {
@@ -115,9 +185,9 @@ class SyncEngine {
       return dataRows;
   }
 
-  Future<void> _pull(SyncSpec s, String householdId) async {
-    final key = 'sync_mark_${s.remote}_$householdId';
-    var mark = prefs.getString(key) ?? '1970-01-01T00:00:00Z';
+  Future<List<Map<String, dynamic>>> _fetch(SyncSpec s, String householdId) async {
+    var mark = prefs.getString(_markKey(s, householdId)) ?? '1970-01-01T00:00:00Z';
+    final all = <Map<String, dynamic>>[];
     while (true) {
       final List<dynamic> rows = await client
           .from(s.remote)
@@ -126,27 +196,30 @@ class SyncEngine {
           .gt('server_updated_at', mark)
           .order('server_updated_at')
           .limit(1000);
-      if (rows.isEmpty) break;
-
-      await db.transaction(() async {
-        for (final raw in rows.cast<Map<String, dynamic>>()) {
-          final json = _fromRemote(s, raw);
-          final local = await db.customSelect(
-            'SELECT dirty, updated_at FROM ${s.local.actualTableName} WHERE id = ?',
-            variables: [Variable.withString(json['id'] as String)],
-          ).getSingleOrNull();
-          if (local != null && local.read<bool>('dirty')) {
-            final localUpdated = local.read<DateTime>('updated_at');
-            final remoteUpdated = DateTime.fromMillisecondsSinceEpoch(json['updatedAt'] as int);
-            if (localUpdated.isAfter(remoteUpdated)) continue; // perubahan lokal menang
-          }
-          await db.into(s.local).insertOnConflictUpdate(s.fromJson(json));
-        }
-      });
-      mark = (rows.last as Map<String, dynamic>)['server_updated_at'] as String;
-      await prefs.setString(key, mark);
+      all.addAll(rows.cast<Map<String, dynamic>>());
       if (rows.length < 1000) break;
+      mark = (rows.last as Map<String, dynamic>)['server_updated_at'] as String;
     }
+    return all;
+  }
+
+  Future<void> _apply(SyncSpec s, List<Map<String, dynamic>> rows) async {
+    await db.transaction(() async {
+      for (final raw in rows) {
+        final json = _fromRemote(s, raw);
+        final local = await db.customSelect(
+          'SELECT dirty, updated_at FROM ${s.local.actualTableName} WHERE id = ?',
+          variables: [Variable.withString(json['id'] as String)],
+        ).getSingleOrNull();
+        final remoteUpdated = DateTime.fromMillisecondsSinceEpoch(json['updatedAt'] as int);
+        if (local != null) {
+          final localUpdated = local.read<DateTime>('updated_at');
+          // Perubahan lokal yang belum terkirim menang bila lebih baru.
+          if (local.read<bool>('dirty') && localUpdated.isAfter(remoteUpdated)) continue;
+        }
+        await db.into(s.local).insertOnConflictUpdate(s.fromJson(json));
+      }
+    });
   }
 
   Future<void> pullMembers(String householdId) async {
@@ -182,6 +255,7 @@ class SyncEngine {
     final out = <String, dynamic>{'dirty': false};
     raw.forEach((k, v) {
       if (k == 'server_updated_at') return;
+      // Kolom yang belum dikenal versi aplikasi ini diabaikan.
       final c = _camel(k);
       if (s.dateFields.contains(c) && v != null) {
         v = DateTime.parse(v as String).toLocal().millisecondsSinceEpoch;

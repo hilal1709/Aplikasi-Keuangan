@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/illustrations/avatars.dart';
 import '../../core/illustrations/clay.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/utils/date_id.dart';
 import '../../core/utils/rupiah.dart';
+import '../../core/widgets/form_sheet.dart';
 import '../../core/widgets/neu_surface.dart';
 import '../../core/widgets/primitives.dart';
 import '../../data/local/database.dart';
@@ -25,6 +27,8 @@ class GoalCard extends ConsumerWidget {
     final pct = (ratio * 100).clamp(0, 999);
     final done = ratio >= 1;
     final tone = Color(goal.color);
+    final inHousehold = ref.watch(householdIdProvider) != null;
+    final members = ref.watch(membersProvider).value ?? const <Member>[];
 
     return NeuPressable(
       onTap: () => context.push('/goal/${goal.id}'),
@@ -49,6 +53,17 @@ class GoalCard extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(goal.name, style: AuraType.headlineSm.copyWith(color: p.onSurface), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    if (inHousehold)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: ShareBadge(
+                          shared: goal.isShared,
+                          avatars: [
+                            for (final m in members.take(3))
+                              AuraAvatar(avatarKey: m.avatar, name: m.displayName, fallbackColor: Color(m.color), size: 18, ring: p.primaryFixed),
+                          ],
+                        ),
+                      ),
                     Text(
                       done
                           ? 'Tercapai'

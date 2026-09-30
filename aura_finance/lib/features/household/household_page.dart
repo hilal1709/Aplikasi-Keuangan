@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:postgrest/postgrest.dart';
 
+import '../../core/icons/category_icons.dart';
 import '../../core/widgets/feedback.dart';
 import '../../core/illustrations/avatars.dart';
 import '../../core/illustrations/clay.dart';
@@ -383,6 +384,10 @@ class _HouseholdInfo extends ConsumerWidget {
             ).staggerIn(i),
           ),
         const SizedBox(height: AuraSpace.lg),
+        const SectionHeader('Yang bisa dilakukan bersama'),
+        const SizedBox(height: AuraSpace.sm + 4),
+        const _SharingGuide(),
+        const SizedBox(height: AuraSpace.lg),
         NeuSurface(
           depth: -1,
           radius: AuraRadius.lg,
@@ -432,6 +437,70 @@ class _HouseholdInfo extends ConsumerWidget {
           },
         ),
       ],
+    );
+  }
+}
+
+/// Ringkasan apa yang dibagikan & apa yang tetap pribadi di rumah tangga.
+class _SharingGuide extends StatelessWidget {
+  const _SharingGuide();
+
+  static const _shared = [
+    (HugeIcons.strokeRoundedWallet01, 'Dompet bersama', 'Saldo & semua transaksinya terlihat kalian berdua, lengkap dengan siapa yang mencatat.'),
+    (HugeIcons.strokeRoundedPiggyBank, 'Target bersama', 'Menabung berdua — lihat kontribusi masing-masing dan dapat kabar setiap ada setoran.'),
+    (HugeIcons.strokeRoundedTarget02, 'Budget bersama', 'Batas belanja dari dompet bersama; peringatan 80% & 100% dikirim ke semua anggota.'),
+    (HugeIcons.strokeRoundedInvoice03, 'Tagihan & transaksi berulang', 'Siapa pun bisa menandai lunas; anggota lain langsung diberi tahu.'),
+    (HugeIcons.strokeRoundedTag01, 'Kategori', 'Satu daftar kategori untuk seluruh rumah tangga.'),
+  ];
+
+  static const _private = [
+    (HugeIcons.strokeRoundedLockKey, 'Dompet, target & budget pribadi', 'Matikan "bersama" saat membuat. Hanya kamu yang melihat isinya.'),
+    (HugeIcons.strokeRoundedView, 'Beranda: Semua / Bersama / Pribadiku', 'Pilih cakupan di Beranda untuk melihat keuangan pribadi atau bersama saja.'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.aura;
+    Widget row((HugeIconData, String, String) r, Color tone) => Padding(
+          padding: const EdgeInsets.only(bottom: 14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              NeuSurface(
+                depth: -0.8,
+                radius: 12,
+                width: 38,
+                height: 38,
+                color: p.surfaceContainer,
+                child: Center(child: AuraIcon(r.$1, size: 19, color: tone)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(r.$2, style: AuraType.labelLg.copyWith(color: p.onSurface)),
+                    Text(r.$3, style: AuraType.bodySm.copyWith(color: p.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+    return NeuSurface(
+      radius: AuraRadius.lg,
+      padding: const EdgeInsets.fromLTRB(AuraSpace.md, AuraSpace.md, AuraSpace.md, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final r in _shared) row(r, p.primary),
+          Divider(color: p.outlineVariant.withValues(alpha: 0.5), height: 8),
+          const SizedBox(height: 10),
+          Text('Tetap bisa sendiri-sendiri', style: AuraType.labelMd.copyWith(color: p.onSurfaceVariant)),
+          const SizedBox(height: 10),
+          for (final r in _private) row(r, p.tertiary),
+        ],
+      ),
     );
   }
 }

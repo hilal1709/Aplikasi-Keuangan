@@ -17,14 +17,32 @@ class BudgetUsage {
   bool get over => spent > budget.limitAmount;
 }
 
+/// Semua budget bulan itu. Budget bersama menghitung pengeluaran dari dompet bersama
+/// (angkanya sama di HP semua anggota); budget pribadi dari dompet pribadiku.
+/// Tanpa rumah tangga semua dompet dihitung.
 final budgetUsageProvider = Provider.family<List<BudgetUsage>, DateTime>((ref, month) {
   final m = DateId.monthStart(month);
+  final end = DateId.nextMonthStart(m);
+  final inHousehold = ref.watch(householdIdProvider) != null;
   final budgets = ref.watch(budgetsProvider(m)).value ?? const [];
-  final spend = ref.watch(spendByCategoryProvider((m, DateId.nextMonthStart(m)))).value ?? const [];
+  Map<String?, int> spendOf(ViewScope s) =>
+      {for (final x in ref.watch(spendForScopeProvider((m, end, s))).value ?? const <CategorySpend>[]) x.categoryId: x.amount};
+  final all = inHousehold ? const <String?, int>{} : spendOf(ViewScope.all);
+  final shared = inHousehold ? spendOf(ViewScope.shared) : const <String?, int>{};
+  final mine = inHousehold ? spendOf(ViewScope.mine) : const <String?, int>{};
   final cats = ref.watch(categoryMapProvider);
-  final byCat = {for (final s in spend) s.categoryId: s.amount};
-  return [for (final b in budgets) BudgetUsage(b, cats[b.categoryId], byCat[b.categoryId] ?? 0)]
-    ..sort((a, b) => b.ratio.compareTo(a.ratio));
+  int spentFor(Budget b) => ((!inHousehold ? all : (b.isShared ? shared : mine))[b.categoryId]) ?? 0;
+  return [for (final b in budgets) BudgetUsage(b, cats[b.categoryId], spentFor(b))]..sort((a, b) => b.ratio.compareTo(a.ratio));
+});
+
+/// Budget yang tampil di Beranda/Insight sesuai cakupan tampilan.
+final scopedBudgetUsageProvider = Provider.family<List<BudgetUsage>, DateTime>((ref, month) {
+  final list = ref.watch(budgetUsageProvider(month));
+  return switch (ref.watch(viewScopeProvider)) {
+    ViewScope.all => list,
+    ViewScope.shared => list.where((u) => u.budget.isShared).toList(),
+    ViewScope.mine => list.where((u) => !u.budget.isShared).toList(),
+  };
 });
 
 /// Rata-rata pengeluaran 3 bulan penuh terakhir.
@@ -32,12 +50,12 @@ final avgMonthlyExpenseProvider = StreamProvider<int>((ref) {
   final db = ref.watch(dbProvider);
   final end = _thisMonth;
   final start = DateTime(end.year, end.month - 3);
-  return db.watchTotals(start, end).map((t) => (t.expense / 3).round());
+  return db.watchTotals(start, end, walletIds: ref.watch(scopedWalletIdsProvider)).map((t) => (t.expense / 3).round());
 });
 
 final healthProvider = Provider<HealthScore>((ref) {
   final totals = ref.watch(monthTotalsProvider(_thisMonth)).value ?? const PeriodTotals(income: 0, expense: 0);
-  final usage = ref.watch(budgetUsageProvider(_thisMonth));
+  final usage = ref.watch(scopedBudgetUsageProvider(_thisMonth));
   final avg = ref.watch(avgMonthlyExpenseProvider).value ?? 0;
   return computeHealth(
     thisMonth: totals,

@@ -21,6 +21,7 @@ import '../../data/sync/sync_providers.dart';
 import '../../domain/finance_math.dart';
 import '../goals/goal_card.dart';
 import '../insights/insights_providers.dart';
+import '../household/scope_switch.dart';
 import '../transactions/add_tx_sheet.dart';
 import '../transactions/tx_tile.dart';
 
@@ -31,7 +32,10 @@ class DashboardPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final top = MediaQuery.paddingOf(context).top;
     final recent = ref.watch(recentTxProvider).value;
-    final goals = ref.watch(goalsProvider).value ?? const [];
+    final scope = ref.watch(viewScopeProvider);
+    final goals = (ref.watch(goalsProvider).value ?? const <(Goal, int)>[])
+        .where((g) => switch (scope) { ViewScope.all => true, ViewScope.shared => g.$1.isShared, ViewScope.mine => !g.$1.isShared })
+        .toList();
 
     var i = 0;
     return RefreshIndicator.adaptive(
@@ -44,7 +48,9 @@ class DashboardPage extends ConsumerWidget {
           const _Greeting().staggerIn(i++),
           const SizedBox(height: AuraSpace.md),
           const _Banners(),
-          const SizedBox(height: AuraSpace.lg),
+          const SizedBox(height: AuraSpace.sm),
+          const ScopeSwitch().staggerIn(i++),
+          const SizedBox(height: AuraSpace.sm),
           const _HeroCard().staggerIn(i++),
           const SizedBox(height: AuraSpace.lg),
           const _QuickActions().staggerIn(i++),
@@ -239,12 +245,12 @@ class _HeroCard extends ConsumerWidget {
     final p = context.aura;
     final hidden = ref.watch(hideBalanceProvider);
     final netWorth = ref.watch(netWorthProvider);
-    final wallets = ref.watch(walletBalancesProvider).value ?? const [];
+    final wallets = ref.watch(scopedWalletBalancesProvider);
     final now = DateTime.now();
     final month = ref.watch(monthTotalsProvider(DateId.monthStart(now))).value ?? const PeriodTotals(income: 0, expense: 0);
     final lastMonth =
         ref.watch(monthTotalsProvider(DateTime(now.year, now.month - 1))).value ?? const PeriodTotals(income: 0, expense: 0);
-    final budgets = ref.watch(budgetUsageProvider(now));
+    final budgets = ref.watch(scopedBudgetUsageProvider(now));
     final budgetTotal = budgets.fold<int>(0, (s, b) => s + b.budget.limitAmount);
 
     String incomeNote() {

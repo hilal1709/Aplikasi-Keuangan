@@ -18,6 +18,7 @@ import '../../core/widgets/neu_surface.dart';
 import '../../core/widgets/primitives.dart';
 import '../../data/local/database.dart';
 import '../../data/providers.dart';
+import '../household/scope_switch.dart';
 import 'export_service.dart';
 import 'insights_providers.dart';
 
@@ -87,6 +88,7 @@ class _InsightsPageState extends ConsumerState<InsightsPage> {
           ],
         ).staggerIn(i++),
         const SizedBox(height: AuraSpace.lg),
+        const ScopeSwitch(showHint: false).staggerIn(i++),
         if (isCurrent) ...[const _HealthCard().staggerIn(i++), const SizedBox(height: AuraSpace.lg)],
         Row(
           children: [

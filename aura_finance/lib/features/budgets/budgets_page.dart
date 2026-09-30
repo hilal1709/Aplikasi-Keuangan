@@ -48,6 +48,7 @@ class _BudgetsPageState extends ConsumerState<BudgetsPage> {
         limitAmount: b.limitAmount,
         householdId: Value(owner.householdId),
         createdBy: Value(owner.userId),
+        isShared: Value(b.isShared),
       ));
     }
     HapticFeedback.mediumImpact();
@@ -131,7 +132,12 @@ class _BudgetsPageState extends ConsumerState<BudgetsPage> {
                 for (final (i, u) in usage.indexed)
                   Padding(
                     padding: const EdgeInsets.only(bottom: AuraSpace.md),
-                    child: _BudgetTile(u: u, hidden: hidden, onTap: () => _showBudgetForm(context, ref, _month, existing: u.budget)).staggerIn(i + 1),
+                    child: _BudgetTile(
+                      u: u,
+                      hidden: hidden,
+                      showShare: ref.watch(householdIdProvider) != null,
+                      onTap: () => _showBudgetForm(context, ref, _month, existing: u.budget),
+                    ).staggerIn(i + 1),
                   ),
               ],
             ],
@@ -143,9 +149,10 @@ class _BudgetsPageState extends ConsumerState<BudgetsPage> {
 }
 
 class _BudgetTile extends StatelessWidget {
-  const _BudgetTile({required this.u, required this.hidden, required this.onTap});
+  const _BudgetTile({required this.u, required this.hidden, required this.onTap, this.showShare = false});
   final BudgetUsage u;
   final bool hidden;
+  final bool showShare;
   final VoidCallback onTap;
 
   @override
@@ -168,7 +175,12 @@ class _BudgetTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(c?.name ?? 'Kategori terhapus', style: AuraType.labelLg.copyWith(color: p.onSurface)),
+                    Row(
+                      children: [
+                        Flexible(child: Text(c?.name ?? 'Kategori terhapus', style: AuraType.labelLg.copyWith(color: p.onSurface), overflow: TextOverflow.ellipsis)),
+                        if (showShare) ...[const SizedBox(width: 6), ShareBadge(shared: u.budget.isShared)],
+                      ],
+                    ),
                     Text(
                       hidden
                           ? 'Rp ••• dari Rp •••'
@@ -212,13 +224,15 @@ class _BudgetForm extends ConsumerStatefulWidget {
 class _BudgetFormState extends ConsumerState<_BudgetForm> {
   late String? _categoryId = widget.existing?.categoryId;
   late int _limit = widget.existing?.limitAmount ?? 0;
+  late bool _shared = widget.existing?.isShared ?? true;
 
   @override
   Widget build(BuildContext context) {
     final p = context.aura;
     final cats = (ref.watch(categoriesProvider).value ?? const <Category>[]).where((c) => c.kind == CategoryKind.expense).toList();
+    // Satu kategori boleh punya satu budget bersama dan satu budget pribadi.
     final taken = (ref.watch(budgetsProvider(widget.month)).value ?? const <Budget>[])
-        .where((b) => b.id != widget.existing?.id)
+        .where((b) => b.id != widget.existing?.id && b.isShared == _shared)
         .map((b) => b.categoryId)
         .toSet();
 
@@ -238,6 +252,18 @@ class _BudgetFormState extends ConsumerState<_BudgetForm> {
         ),
         const FieldLabel('Batas per bulan'),
         AmountField(initial: _limit, onChanged: (v) => _limit = v),
+        if (ref.watch(householdIdProvider) != null)
+          ShareToggle(
+            title: 'Budget bersama',
+            value: _shared,
+            locked: widget.existing?.isShared == true,
+            sharedHint: 'Menghitung pengeluaran dari dompet bersama',
+            privateHint: 'Menghitung pengeluaran dari dompet pribadimu saja',
+            onChanged: (v) => setState(() {
+              _shared = v;
+              _categoryId = null;
+            }),
+          ),
         PrimaryAction(
           label: 'Simpan',
           onPressed: () async {
@@ -255,6 +281,7 @@ class _BudgetFormState extends ConsumerState<_BudgetForm> {
                   categoryId: Value(_categoryId!),
                   month: Value(widget.month),
                   limitAmount: Value(_limit),
+                  isShared: Value(_shared),
                 ));
             if (context.mounted) Navigator.of(context).pop();
           },

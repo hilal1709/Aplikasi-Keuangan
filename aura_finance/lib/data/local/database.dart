@@ -32,6 +32,13 @@ class DayFlow {
   final int expense;
 }
 
+/// Setoran/penarikan target yang memakai dompet, untuk riwayat transaksi.
+class WalletContribution {
+  const WalletContribution(this.contribution, this.goal);
+  final GoalContribution contribution;
+  final Goal? goal;
+}
+
 class CategorySpend {
   const CategorySpend(this.categoryId, this.amount);
   final String? categoryId;
@@ -45,7 +52,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? driftDatabase(name: 'aura_finance'));
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -55,6 +62,11 @@ class AppDatabase extends _$AppDatabase {
         },
         onUpgrade: (m, from, to) async {
           if (from < 2) await m.addColumn(members, members.avatar);
+          if (from < 3) {
+            await m.addColumn(goals, goals.isShared);
+            await m.addColumn(budgets, budgets.isShared);
+            await m.addColumn(goalContributions, goalContributions.walletId);
+          }
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = OFF');
@@ -72,17 +84,21 @@ class AppDatabase extends _$AppDatabase {
         + COALESCE((SELECT SUM(amount) FROM tx_entries t WHERE t.deleted_at IS NULL AND t.kind = 'income' AND t.wallet_id = w.id), 0)
         - COALESCE((SELECT SUM(amount) FROM tx_entries t WHERE t.deleted_at IS NULL AND t.kind IN ('expense','transfer') AND t.wallet_id = w.id), 0)
         + COALESCE((SELECT SUM(amount) FROM tx_entries t WHERE t.deleted_at IS NULL AND t.kind = 'transfer' AND t.to_wallet_id = w.id), 0)
+        - COALESCE((SELECT SUM(amount) FROM goal_contributions c WHERE c.deleted_at IS NULL AND c.wallet_id = w.id), 0)
         AS balance
       FROM wallets w
       WHERE w.deleted_at IS NULL AND w.archived = 0
       ORDER BY w.sort_order, w.created_at
       ''',
-      readsFrom: {wallets, txEntries},
+      readsFrom: {wallets, txEntries, goalContributions},
     );
     return query.watch().map(
           (rows) => rows.map((r) => WalletBalance(wallets.map(r.data), r.read<int>('balance'))).toList(),
         );
   }
+
+  /// Semua dompet yang masih ada (termasuk yang diarsipkan) — dasar filter Semua/Bersama/Pribadi.
+  Stream<List<Wallet>> watchAllWallets() => (select(wallets)..where((w) => w.deletedAt.isNull())).watch();
 
   Future<void> upsertWallet(WalletsCompanion w) => into(wallets).insertOnConflictUpdate(_touchWallet(w));
 
@@ -152,12 +168,22 @@ class AppDatabase extends _$AppDatabase {
   // ---------------------------------------------------------------------------
   // Transaksi
 
-  Stream<List<TxEntry>> watchRecentTx({int limit = 5}) {
-    return (select(txEntries)
-          ..where((t) => t.deletedAt.isNull())
-          ..orderBy([(t) => OrderingTerm.desc(t.occurredAt)])
-          ..limit(limit))
-        .watch();
+  /// Potongan SQL `AND <kolom> IN (...)` untuk membatasi ke sekumpulan dompet.
+  /// null = tanpa batas; himpunan kosong = tidak ada baris.
+  static String _walletClause(Set<String>? ids, List<Variable<Object>> vars, {String alias = ''}) {
+    if (ids == null) return '';
+    if (ids.isEmpty) return ' AND 0';
+    vars.addAll(ids.map(Variable.withString));
+    return ' AND ${alias}wallet_id IN (${List.filled(ids.length, '?').join(',')})';
+  }
+
+  Stream<List<TxEntry>> watchRecentTx({int limit = 5, Set<String>? walletIds}) {
+    final q = select(txEntries)..where((t) => t.deletedAt.isNull());
+    if (walletIds != null) q.where((t) => t.walletId.isIn(walletIds) | t.toWalletId.isIn(walletIds));
+    q
+      ..orderBy([(t) => OrderingTerm.desc(t.occurredAt)])
+      ..limit(limit);
+    return q.watch();
   }
 
   Stream<List<TxEntry>> watchTx({
@@ -196,28 +222,32 @@ class AppDatabase extends _$AppDatabase {
         TxEntriesCompanion(deletedAt: const Value(null), updatedAt: Value(DateTime.now()), dirty: const Value(true)),
       );
 
-  Stream<PeriodTotals> watchTotals(DateTime from, DateTime to) {
+  Stream<PeriodTotals> watchTotals(DateTime from, DateTime to, {Set<String>? walletIds}) {
+    final vars = <Variable<Object>>[Variable.withDateTime(from), Variable.withDateTime(to)];
+    final clause = _walletClause(walletIds, vars);
     return customSelect(
       '''
       SELECT
         COALESCE(SUM(CASE WHEN kind = 'income' THEN amount END), 0) AS income,
         COALESCE(SUM(CASE WHEN kind = 'expense' THEN amount END), 0) AS expense
       FROM tx_entries
-      WHERE deleted_at IS NULL AND occurred_at >= ? AND occurred_at < ?
+      WHERE deleted_at IS NULL AND occurred_at >= ? AND occurred_at < ?$clause
       ''',
-      variables: [Variable.withDateTime(from), Variable.withDateTime(to)],
+      variables: vars,
       readsFrom: {txEntries},
     ).watchSingle().map((r) => PeriodTotals(income: r.read<int>('income'), expense: r.read<int>('expense')));
   }
 
   /// Arus kas per hari dalam rentang (hari tanpa transaksi diisi nol).
-  Stream<List<DayFlow>> watchDailyFlow(DateTime from, DateTime to) {
-    return (select(txEntries)
-          ..where((t) =>
-              t.deletedAt.isNull() &
-              t.occurredAt.isBiggerOrEqualValue(from) &
-              t.occurredAt.isSmallerThanValue(to) &
-              t.kind.isNotValue(TxKind.transfer.name)))
+  Stream<List<DayFlow>> watchDailyFlow(DateTime from, DateTime to, {Set<String>? walletIds}) {
+    final q = select(txEntries)
+      ..where((t) =>
+          t.deletedAt.isNull() &
+          t.occurredAt.isBiggerOrEqualValue(from) &
+          t.occurredAt.isSmallerThanValue(to) &
+          t.kind.isNotValue(TxKind.transfer.name));
+    if (walletIds != null) q.where((t) => t.walletId.isIn(walletIds));
+    return q
         .watch()
         .map((rows) {
       final days = <DateTime, List<int>>{};
@@ -238,16 +268,18 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
-  Stream<List<CategorySpend>> watchSpendByCategory(DateTime from, DateTime to, {TxKind kind = TxKind.expense}) {
+  Stream<List<CategorySpend>> watchSpendByCategory(DateTime from, DateTime to, {TxKind kind = TxKind.expense, Set<String>? walletIds}) {
+    final vars = <Variable<Object>>[Variable.withString(kind.name), Variable.withDateTime(from), Variable.withDateTime(to)];
+    final clause = _walletClause(walletIds, vars);
     return customSelect(
       '''
       SELECT category_id, SUM(amount) AS total
       FROM tx_entries
-      WHERE deleted_at IS NULL AND kind = ? AND occurred_at >= ? AND occurred_at < ?
+      WHERE deleted_at IS NULL AND kind = ? AND occurred_at >= ? AND occurred_at < ?$clause
       GROUP BY category_id
       ORDER BY total DESC
       ''',
-      variables: [Variable.withString(kind.name), Variable.withDateTime(from), Variable.withDateTime(to)],
+      variables: vars,
       readsFrom: {txEntries},
     ).watch().map((rows) => rows.map((r) => CategorySpend(r.readNullable<String>('category_id'), r.read<int>('total'))).toList());
   }
@@ -287,7 +319,36 @@ class AppDatabase extends _$AppDatabase {
   Future<void> upsertGoal(GoalsCompanion g) =>
       into(goals).insertOnConflictUpdate(g.copyWith(updatedAt: Value(DateTime.now()), dirty: const Value(true)));
 
-  Future<void> softDeleteGoal(String id) => _softDelete(goals, id);
+  /// Hapus target beserta setorannya, sehingga uang yang diambil dari dompet kembali ke saldo dompet.
+  Future<void> softDeleteGoal(String id) => transaction(() async {
+        final now = DateTime.now();
+        await customUpdate(
+          'UPDATE goal_contributions SET deleted_at = ?, updated_at = ?, dirty = 1 WHERE deleted_at IS NULL AND goal_id = ?',
+          variables: [Variable.withDateTime(now), Variable.withDateTime(now), Variable.withString(id)],
+          updates: {goalContributions},
+        );
+        await _softDelete(goals, id);
+      });
+
+  /// Setoran target yang mengambil dari / kembali ke dompet dalam rentang waktu.
+  Stream<List<WalletContribution>> watchWalletContributions({
+    required DateTime from,
+    required DateTime to,
+    String? walletId,
+    String? createdBy,
+  }) {
+    final q = select(goalContributions).join([leftOuterJoin(goals, goals.id.equalsExp(goalContributions.goalId))])
+      ..where(goalContributions.deletedAt.isNull() &
+          goalContributions.walletId.isNotNull() &
+          goalContributions.occurredAt.isBiggerOrEqualValue(from) &
+          goalContributions.occurredAt.isSmallerThanValue(to));
+    if (walletId != null) q.where(goalContributions.walletId.equals(walletId));
+    if (createdBy != null) q.where(goalContributions.createdBy.equals(createdBy));
+    q.orderBy([OrderingTerm.desc(goalContributions.occurredAt)]);
+    return q.watch().map((rows) => [
+          for (final r in rows) WalletContribution(r.readTable(goalContributions), r.readTableOrNull(goals)),
+        ]);
+  }
 
   Future<void> addContribution(GoalContributionsCompanion c) =>
       into(goalContributions).insert(c.copyWith(updatedAt: Value(DateTime.now()), dirty: const Value(true)));

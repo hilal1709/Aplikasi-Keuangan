@@ -108,11 +108,17 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
       final last = ref.read(dbProvider).lastLocalTxWrite;
       if (last == null || DateTime.now().difference(last) > const Duration(seconds: 15)) return;
       final notif = ref.read(notificationsProvider);
+      final before = {for (final u in prev ?? const <BudgetUsage>[]) u.budget.id: u.ratio};
       for (final u in next) {
         final t = u.ratio >= 1 ? 100 : (u.ratio >= 0.8 ? 80 : 0);
         if (t == 0 || u.category == null) continue;
+        // Hanya bila ambang baru saja terlewati oleh catatan ini, supaya pasangan yang
+        // mencatat belakangan tidak mengirim peringatan yang sama untuk kedua kalinya.
+        final was = before[u.budget.id];
+        if (was == null || was >= t / 100) continue;
         final fresh = await notif.budgetAlert(budgetId: u.budget.id, category: u.category!.name, threshold: t, spent: u.spent, limit: u.budget.limitAmount);
-        if (fresh) {
+        // Budget pribadi cukup diingatkan di HP ini; budget bersama juga dikabarkan ke pasangan.
+        if (fresh && u.budget.isShared) {
           ref.read(realtimeProvider.notifier).notify(
                 kind: 'budget',
                 title: t >= 100 ? 'Budget ${u.category!.name} terlampaui' : 'Budget ${u.category!.name} sudah $t%',

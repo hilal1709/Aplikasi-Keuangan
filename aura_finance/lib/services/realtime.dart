@@ -107,32 +107,63 @@ class RealtimeController extends Notifier<bool> {
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
-  void _onEvent(PusherEvent e, String me) {
+  Future<void> _onEvent(PusherEvent e, String me) async {
     if (e.eventName != 'changed') return;
-    ref.read(syncControllerProvider.notifier).syncNow();
+    Map<String, dynamic> data;
     try {
-      final data = jsonDecode(e.data as String) as Map<String, dynamic>;
-      final by = data['by'] as String? ?? '';
-      final title = data['title'] as String? ?? '';
-      if (by != me && title.isNotEmpty) {
-        _events.add(PartnerEvent(by: by, kind: data['kind'] as String? ?? '', title: title, body: data['body'] as String? ?? ''));
+      data = jsonDecode(e.data as String) as Map<String, dynamic>;
+    } catch (_) {
+      data = const {};
+    }
+    final sync = ref.read(syncControllerProvider.notifier);
+    final hid = ref.read(householdIdProvider);
+    final engine = ref.read(syncEngineProvider);
+    // 1) Terapkan isi perubahan yang ikut di sinyal -> layar langsung berubah.
+    final changes = data['changes'];
+    if (changes is Map<String, dynamic> && hid != null && engine != null) {
+      try {
+        await engine.applyChanges(changes, hid);
+      } catch (err) {
+        debugPrint('applyChanges gagal: $err');
       }
-    } catch (_) {}
+    }
+    // 2) Tarik versi resmi dari server, hanya tabel yang berubah bila disebutkan.
+    final tables = (data['tables'] as List?)?.whereType<String>().toSet();
+    unawaited(sync.syncNow(tables: tables == null || tables.isEmpty ? null : tables));
+    final by = data['by'] as String? ?? '';
+    final title = data['title'] as String? ?? '';
+    if (by != me && title.isNotEmpty) {
+      _events.add(PartnerEvent(by: by, kind: data['kind'] as String? ?? '', title: title, body: data['body'] as String? ?? ''));
+    }
   }
 
   /// Memberi tahu anggota lain (realtime + push). Gagal diam-diam saat offline.
   /// Untuk kabar dari UI (tagihan, target, budget) data dikirim dulu ke Neon,
   /// supaya HP pasangan yang menerima sinyal langsung menarik data terbaru.
-  Future<void> notify({required String kind, String title = '', String body = ''}) async {
+  /// Batas ukuran isi perubahan yang ikut di sinyal (event Pusher maksimal 10 KB).
+  static const _maxChangesBytes = 7000;
+
+  Future<void> notify({
+    required String kind,
+    String title = '',
+    String body = '',
+    Map<String, List<Map<String, dynamic>>> changes = const {},
+  }) async {
     final hid = ref.read(householdIdProvider);
     if (RealtimeConfig.apiUrl.isEmpty || hid == null || Neon.auth.currentUser == null) return;
     try {
       if (kind != 'tx' && kind != 'sync') await ref.read(syncControllerProvider.notifier).syncNow();
       final socketId = _pusher == null ? null : await _pusher!.getSocketId();
+      final payload = <String, dynamic>{'household_id': hid, 'kind': kind, 'title': title, 'body': body, 'socket_id': socketId};
+      if (changes.isNotEmpty) {
+        payload['tables'] = changes.keys.toList();
+        final visible = {for (final e in changes.entries) if (e.value.isNotEmpty) e.key: e.value};
+        if (visible.isNotEmpty && utf8.encode(jsonEncode(visible)).length <= _maxChangesBytes) payload['changes'] = visible;
+      }
       await http.post(
         Uri.parse('${RealtimeConfig.apiUrl}/notify'),
         headers: {'Authorization': 'Bearer ${await Neon.auth.accessToken()}', 'Content-Type': 'application/json'},
-        body: jsonEncode({'household_id': hid, 'kind': kind, 'title': title, 'body': body, 'socket_id': socketId}),
+        body: jsonEncode(payload),
       );
     } catch (e) {
       debugPrint('notify gagal: $e');

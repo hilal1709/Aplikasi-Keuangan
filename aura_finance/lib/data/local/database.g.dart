@@ -2643,6 +2643,21 @@ class $BudgetsTable extends Budgets with TableInfo<$BudgetsTable, Budget> {
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _isSharedMeta = const VerificationMeta(
+    'isShared',
+  );
+  @override
+  late final GeneratedColumn<bool> isShared = GeneratedColumn<bool>(
+    'is_shared',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_shared" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2655,6 +2670,7 @@ class $BudgetsTable extends Budgets with TableInfo<$BudgetsTable, Budget> {
     categoryId,
     month,
     limitAmount,
+    isShared,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2739,6 +2755,12 @@ class $BudgetsTable extends Budgets with TableInfo<$BudgetsTable, Budget> {
     } else if (isInserting) {
       context.missing(_limitAmountMeta);
     }
+    if (data.containsKey('is_shared')) {
+      context.handle(
+        _isSharedMeta,
+        isShared.isAcceptableOrUnknown(data['is_shared']!, _isSharedMeta),
+      );
+    }
     return context;
   }
 
@@ -2788,6 +2810,10 @@ class $BudgetsTable extends Budgets with TableInfo<$BudgetsTable, Budget> {
         DriftSqlType.int,
         data['${effectivePrefix}limit_amount'],
       )!,
+      isShared: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_shared'],
+      )!,
     );
   }
 
@@ -2810,6 +2836,10 @@ class Budget extends DataClass implements Insertable<Budget> {
   /// Awal bulan (tanggal 1, 00:00).
   final DateTime month;
   final int limitAmount;
+
+  /// Bersama = menghitung pengeluaran dompet bersama & terlihat semua anggota.
+  /// Pribadi = hanya pembuatnya, menghitung pengeluaran dompet pribadinya.
+  final bool isShared;
   const Budget({
     required this.id,
     this.householdId,
@@ -2821,6 +2851,7 @@ class Budget extends DataClass implements Insertable<Budget> {
     required this.categoryId,
     required this.month,
     required this.limitAmount,
+    required this.isShared,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2841,6 +2872,7 @@ class Budget extends DataClass implements Insertable<Budget> {
     map['category_id'] = Variable<String>(categoryId);
     map['month'] = Variable<DateTime>(month);
     map['limit_amount'] = Variable<int>(limitAmount);
+    map['is_shared'] = Variable<bool>(isShared);
     return map;
   }
 
@@ -2862,6 +2894,7 @@ class Budget extends DataClass implements Insertable<Budget> {
       categoryId: Value(categoryId),
       month: Value(month),
       limitAmount: Value(limitAmount),
+      isShared: Value(isShared),
     );
   }
 
@@ -2881,6 +2914,7 @@ class Budget extends DataClass implements Insertable<Budget> {
       categoryId: serializer.fromJson<String>(json['categoryId']),
       month: serializer.fromJson<DateTime>(json['month']),
       limitAmount: serializer.fromJson<int>(json['limitAmount']),
+      isShared: serializer.fromJson<bool>(json['isShared']),
     );
   }
   @override
@@ -2897,6 +2931,7 @@ class Budget extends DataClass implements Insertable<Budget> {
       'categoryId': serializer.toJson<String>(categoryId),
       'month': serializer.toJson<DateTime>(month),
       'limitAmount': serializer.toJson<int>(limitAmount),
+      'isShared': serializer.toJson<bool>(isShared),
     };
   }
 
@@ -2911,6 +2946,7 @@ class Budget extends DataClass implements Insertable<Budget> {
     String? categoryId,
     DateTime? month,
     int? limitAmount,
+    bool? isShared,
   }) => Budget(
     id: id ?? this.id,
     householdId: householdId.present ? householdId.value : this.householdId,
@@ -2922,6 +2958,7 @@ class Budget extends DataClass implements Insertable<Budget> {
     categoryId: categoryId ?? this.categoryId,
     month: month ?? this.month,
     limitAmount: limitAmount ?? this.limitAmount,
+    isShared: isShared ?? this.isShared,
   );
   Budget copyWithCompanion(BudgetsCompanion data) {
     return Budget(
@@ -2941,6 +2978,7 @@ class Budget extends DataClass implements Insertable<Budget> {
       limitAmount: data.limitAmount.present
           ? data.limitAmount.value
           : this.limitAmount,
+      isShared: data.isShared.present ? data.isShared.value : this.isShared,
     );
   }
 
@@ -2956,7 +2994,8 @@ class Budget extends DataClass implements Insertable<Budget> {
           ..write('dirty: $dirty, ')
           ..write('categoryId: $categoryId, ')
           ..write('month: $month, ')
-          ..write('limitAmount: $limitAmount')
+          ..write('limitAmount: $limitAmount, ')
+          ..write('isShared: $isShared')
           ..write(')'))
         .toString();
   }
@@ -2973,6 +3012,7 @@ class Budget extends DataClass implements Insertable<Budget> {
     categoryId,
     month,
     limitAmount,
+    isShared,
   );
   @override
   bool operator ==(Object other) =>
@@ -2987,7 +3027,8 @@ class Budget extends DataClass implements Insertable<Budget> {
           other.dirty == this.dirty &&
           other.categoryId == this.categoryId &&
           other.month == this.month &&
-          other.limitAmount == this.limitAmount);
+          other.limitAmount == this.limitAmount &&
+          other.isShared == this.isShared);
 }
 
 class BudgetsCompanion extends UpdateCompanion<Budget> {
@@ -3001,6 +3042,7 @@ class BudgetsCompanion extends UpdateCompanion<Budget> {
   final Value<String> categoryId;
   final Value<DateTime> month;
   final Value<int> limitAmount;
+  final Value<bool> isShared;
   final Value<int> rowid;
   const BudgetsCompanion({
     this.id = const Value.absent(),
@@ -3013,6 +3055,7 @@ class BudgetsCompanion extends UpdateCompanion<Budget> {
     this.categoryId = const Value.absent(),
     this.month = const Value.absent(),
     this.limitAmount = const Value.absent(),
+    this.isShared = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   BudgetsCompanion.insert({
@@ -3026,6 +3069,7 @@ class BudgetsCompanion extends UpdateCompanion<Budget> {
     required String categoryId,
     required DateTime month,
     required int limitAmount,
+    this.isShared = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        categoryId = Value(categoryId),
@@ -3042,6 +3086,7 @@ class BudgetsCompanion extends UpdateCompanion<Budget> {
     Expression<String>? categoryId,
     Expression<DateTime>? month,
     Expression<int>? limitAmount,
+    Expression<bool>? isShared,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -3055,6 +3100,7 @@ class BudgetsCompanion extends UpdateCompanion<Budget> {
       if (categoryId != null) 'category_id': categoryId,
       if (month != null) 'month': month,
       if (limitAmount != null) 'limit_amount': limitAmount,
+      if (isShared != null) 'is_shared': isShared,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -3070,6 +3116,7 @@ class BudgetsCompanion extends UpdateCompanion<Budget> {
     Value<String>? categoryId,
     Value<DateTime>? month,
     Value<int>? limitAmount,
+    Value<bool>? isShared,
     Value<int>? rowid,
   }) {
     return BudgetsCompanion(
@@ -3083,6 +3130,7 @@ class BudgetsCompanion extends UpdateCompanion<Budget> {
       categoryId: categoryId ?? this.categoryId,
       month: month ?? this.month,
       limitAmount: limitAmount ?? this.limitAmount,
+      isShared: isShared ?? this.isShared,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -3120,6 +3168,9 @@ class BudgetsCompanion extends UpdateCompanion<Budget> {
     if (limitAmount.present) {
       map['limit_amount'] = Variable<int>(limitAmount.value);
     }
+    if (isShared.present) {
+      map['is_shared'] = Variable<bool>(isShared.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -3139,6 +3190,7 @@ class BudgetsCompanion extends UpdateCompanion<Budget> {
           ..write('categoryId: $categoryId, ')
           ..write('month: $month, ')
           ..write('limitAmount: $limitAmount, ')
+          ..write('isShared: $isShared, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3304,6 +3356,21 @@ class $GoalsTable extends Goals with TableInfo<$GoalsTable, Goal> {
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _isSharedMeta = const VerificationMeta(
+    'isShared',
+  );
+  @override
+  late final GeneratedColumn<bool> isShared = GeneratedColumn<bool>(
+    'is_shared',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_shared" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -3320,6 +3387,7 @@ class $GoalsTable extends Goals with TableInfo<$GoalsTable, Goal> {
     color,
     achievedAt,
     archived,
+    isShared,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3430,6 +3498,12 @@ class $GoalsTable extends Goals with TableInfo<$GoalsTable, Goal> {
         archived.isAcceptableOrUnknown(data['archived']!, _archivedMeta),
       );
     }
+    if (data.containsKey('is_shared')) {
+      context.handle(
+        _isSharedMeta,
+        isShared.isAcceptableOrUnknown(data['is_shared']!, _isSharedMeta),
+      );
+    }
     return context;
   }
 
@@ -3495,6 +3569,10 @@ class $GoalsTable extends Goals with TableInfo<$GoalsTable, Goal> {
         DriftSqlType.bool,
         data['${effectivePrefix}archived'],
       )!,
+      isShared: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_shared'],
+      )!,
     );
   }
 
@@ -3521,6 +3599,9 @@ class Goal extends DataClass implements Insertable<Goal> {
   final int color;
   final DateTime? achievedAt;
   final bool archived;
+
+  /// Bersama = semua anggota bisa melihat & menyetor. Pribadi = hanya pembuatnya.
+  final bool isShared;
   const Goal({
     required this.id,
     this.householdId,
@@ -3536,6 +3617,7 @@ class Goal extends DataClass implements Insertable<Goal> {
     required this.color,
     this.achievedAt,
     required this.archived,
+    required this.isShared,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3564,6 +3646,7 @@ class Goal extends DataClass implements Insertable<Goal> {
       map['achieved_at'] = Variable<DateTime>(achievedAt);
     }
     map['archived'] = Variable<bool>(archived);
+    map['is_shared'] = Variable<bool>(isShared);
     return map;
   }
 
@@ -3593,6 +3676,7 @@ class Goal extends DataClass implements Insertable<Goal> {
           ? const Value.absent()
           : Value(achievedAt),
       archived: Value(archived),
+      isShared: Value(isShared),
     );
   }
 
@@ -3616,6 +3700,7 @@ class Goal extends DataClass implements Insertable<Goal> {
       color: serializer.fromJson<int>(json['color']),
       achievedAt: serializer.fromJson<DateTime?>(json['achievedAt']),
       archived: serializer.fromJson<bool>(json['archived']),
+      isShared: serializer.fromJson<bool>(json['isShared']),
     );
   }
   @override
@@ -3636,6 +3721,7 @@ class Goal extends DataClass implements Insertable<Goal> {
       'color': serializer.toJson<int>(color),
       'achievedAt': serializer.toJson<DateTime?>(achievedAt),
       'archived': serializer.toJson<bool>(archived),
+      'isShared': serializer.toJson<bool>(isShared),
     };
   }
 
@@ -3654,6 +3740,7 @@ class Goal extends DataClass implements Insertable<Goal> {
     int? color,
     Value<DateTime?> achievedAt = const Value.absent(),
     bool? archived,
+    bool? isShared,
   }) => Goal(
     id: id ?? this.id,
     householdId: householdId.present ? householdId.value : this.householdId,
@@ -3669,6 +3756,7 @@ class Goal extends DataClass implements Insertable<Goal> {
     color: color ?? this.color,
     achievedAt: achievedAt.present ? achievedAt.value : this.achievedAt,
     archived: archived ?? this.archived,
+    isShared: isShared ?? this.isShared,
   );
   Goal copyWithCompanion(GoalsCompanion data) {
     return Goal(
@@ -3692,6 +3780,7 @@ class Goal extends DataClass implements Insertable<Goal> {
           ? data.achievedAt.value
           : this.achievedAt,
       archived: data.archived.present ? data.archived.value : this.archived,
+      isShared: data.isShared.present ? data.isShared.value : this.isShared,
     );
   }
 
@@ -3711,7 +3800,8 @@ class Goal extends DataClass implements Insertable<Goal> {
           ..write('illustration: $illustration, ')
           ..write('color: $color, ')
           ..write('achievedAt: $achievedAt, ')
-          ..write('archived: $archived')
+          ..write('archived: $archived, ')
+          ..write('isShared: $isShared')
           ..write(')'))
         .toString();
   }
@@ -3732,6 +3822,7 @@ class Goal extends DataClass implements Insertable<Goal> {
     color,
     achievedAt,
     archived,
+    isShared,
   );
   @override
   bool operator ==(Object other) =>
@@ -3750,7 +3841,8 @@ class Goal extends DataClass implements Insertable<Goal> {
           other.illustration == this.illustration &&
           other.color == this.color &&
           other.achievedAt == this.achievedAt &&
-          other.archived == this.archived);
+          other.archived == this.archived &&
+          other.isShared == this.isShared);
 }
 
 class GoalsCompanion extends UpdateCompanion<Goal> {
@@ -3768,6 +3860,7 @@ class GoalsCompanion extends UpdateCompanion<Goal> {
   final Value<int> color;
   final Value<DateTime?> achievedAt;
   final Value<bool> archived;
+  final Value<bool> isShared;
   final Value<int> rowid;
   const GoalsCompanion({
     this.id = const Value.absent(),
@@ -3784,6 +3877,7 @@ class GoalsCompanion extends UpdateCompanion<Goal> {
     this.color = const Value.absent(),
     this.achievedAt = const Value.absent(),
     this.archived = const Value.absent(),
+    this.isShared = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   GoalsCompanion.insert({
@@ -3801,6 +3895,7 @@ class GoalsCompanion extends UpdateCompanion<Goal> {
     required int color,
     this.achievedAt = const Value.absent(),
     this.archived = const Value.absent(),
+    this.isShared = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -3822,6 +3917,7 @@ class GoalsCompanion extends UpdateCompanion<Goal> {
     Expression<int>? color,
     Expression<DateTime>? achievedAt,
     Expression<bool>? archived,
+    Expression<bool>? isShared,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -3839,6 +3935,7 @@ class GoalsCompanion extends UpdateCompanion<Goal> {
       if (color != null) 'color': color,
       if (achievedAt != null) 'achieved_at': achievedAt,
       if (archived != null) 'archived': archived,
+      if (isShared != null) 'is_shared': isShared,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -3858,6 +3955,7 @@ class GoalsCompanion extends UpdateCompanion<Goal> {
     Value<int>? color,
     Value<DateTime?>? achievedAt,
     Value<bool>? archived,
+    Value<bool>? isShared,
     Value<int>? rowid,
   }) {
     return GoalsCompanion(
@@ -3875,6 +3973,7 @@ class GoalsCompanion extends UpdateCompanion<Goal> {
       color: color ?? this.color,
       achievedAt: achievedAt ?? this.achievedAt,
       archived: archived ?? this.archived,
+      isShared: isShared ?? this.isShared,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -3924,6 +4023,9 @@ class GoalsCompanion extends UpdateCompanion<Goal> {
     if (archived.present) {
       map['archived'] = Variable<bool>(archived.value);
     }
+    if (isShared.present) {
+      map['is_shared'] = Variable<bool>(isShared.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -3947,6 +4049,7 @@ class GoalsCompanion extends UpdateCompanion<Goal> {
           ..write('color: $color, ')
           ..write('achievedAt: $achievedAt, ')
           ..write('archived: $archived, ')
+          ..write('isShared: $isShared, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -4077,6 +4180,17 @@ class $GoalContributionsTable extends GoalContributions
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _walletIdMeta = const VerificationMeta(
+    'walletId',
+  );
+  @override
+  late final GeneratedColumn<String> walletId = GeneratedColumn<String>(
+    'wallet_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -4090,6 +4204,7 @@ class $GoalContributionsTable extends GoalContributions
     amount,
     note,
     occurredAt,
+    walletId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -4177,6 +4292,12 @@ class $GoalContributionsTable extends GoalContributions
     } else if (isInserting) {
       context.missing(_occurredAtMeta);
     }
+    if (data.containsKey('wallet_id')) {
+      context.handle(
+        _walletIdMeta,
+        walletId.isAcceptableOrUnknown(data['wallet_id']!, _walletIdMeta),
+      );
+    }
     return context;
   }
 
@@ -4230,6 +4351,10 @@ class $GoalContributionsTable extends GoalContributions
         DriftSqlType.dateTime,
         data['${effectivePrefix}occurred_at'],
       )!,
+      walletId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}wallet_id'],
+      ),
     );
   }
 
@@ -4254,6 +4379,9 @@ class GoalContribution extends DataClass
   final int amount;
   final String note;
   final DateTime occurredAt;
+
+  /// Dompet sumber setoran (atau tujuan penarikan). Null = tidak memengaruhi saldo dompet.
+  final String? walletId;
   const GoalContribution({
     required this.id,
     this.householdId,
@@ -4266,6 +4394,7 @@ class GoalContribution extends DataClass
     required this.amount,
     required this.note,
     required this.occurredAt,
+    this.walletId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -4287,6 +4416,9 @@ class GoalContribution extends DataClass
     map['amount'] = Variable<int>(amount);
     map['note'] = Variable<String>(note);
     map['occurred_at'] = Variable<DateTime>(occurredAt);
+    if (!nullToAbsent || walletId != null) {
+      map['wallet_id'] = Variable<String>(walletId);
+    }
     return map;
   }
 
@@ -4309,6 +4441,9 @@ class GoalContribution extends DataClass
       amount: Value(amount),
       note: Value(note),
       occurredAt: Value(occurredAt),
+      walletId: walletId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(walletId),
     );
   }
 
@@ -4329,6 +4464,7 @@ class GoalContribution extends DataClass
       amount: serializer.fromJson<int>(json['amount']),
       note: serializer.fromJson<String>(json['note']),
       occurredAt: serializer.fromJson<DateTime>(json['occurredAt']),
+      walletId: serializer.fromJson<String?>(json['walletId']),
     );
   }
   @override
@@ -4346,6 +4482,7 @@ class GoalContribution extends DataClass
       'amount': serializer.toJson<int>(amount),
       'note': serializer.toJson<String>(note),
       'occurredAt': serializer.toJson<DateTime>(occurredAt),
+      'walletId': serializer.toJson<String?>(walletId),
     };
   }
 
@@ -4361,6 +4498,7 @@ class GoalContribution extends DataClass
     int? amount,
     String? note,
     DateTime? occurredAt,
+    Value<String?> walletId = const Value.absent(),
   }) => GoalContribution(
     id: id ?? this.id,
     householdId: householdId.present ? householdId.value : this.householdId,
@@ -4373,6 +4511,7 @@ class GoalContribution extends DataClass
     amount: amount ?? this.amount,
     note: note ?? this.note,
     occurredAt: occurredAt ?? this.occurredAt,
+    walletId: walletId.present ? walletId.value : this.walletId,
   );
   GoalContribution copyWithCompanion(GoalContributionsCompanion data) {
     return GoalContribution(
@@ -4391,6 +4530,7 @@ class GoalContribution extends DataClass
       occurredAt: data.occurredAt.present
           ? data.occurredAt.value
           : this.occurredAt,
+      walletId: data.walletId.present ? data.walletId.value : this.walletId,
     );
   }
 
@@ -4407,7 +4547,8 @@ class GoalContribution extends DataClass
           ..write('goalId: $goalId, ')
           ..write('amount: $amount, ')
           ..write('note: $note, ')
-          ..write('occurredAt: $occurredAt')
+          ..write('occurredAt: $occurredAt, ')
+          ..write('walletId: $walletId')
           ..write(')'))
         .toString();
   }
@@ -4425,6 +4566,7 @@ class GoalContribution extends DataClass
     amount,
     note,
     occurredAt,
+    walletId,
   );
   @override
   bool operator ==(Object other) =>
@@ -4440,7 +4582,8 @@ class GoalContribution extends DataClass
           other.goalId == this.goalId &&
           other.amount == this.amount &&
           other.note == this.note &&
-          other.occurredAt == this.occurredAt);
+          other.occurredAt == this.occurredAt &&
+          other.walletId == this.walletId);
 }
 
 class GoalContributionsCompanion extends UpdateCompanion<GoalContribution> {
@@ -4455,6 +4598,7 @@ class GoalContributionsCompanion extends UpdateCompanion<GoalContribution> {
   final Value<int> amount;
   final Value<String> note;
   final Value<DateTime> occurredAt;
+  final Value<String?> walletId;
   final Value<int> rowid;
   const GoalContributionsCompanion({
     this.id = const Value.absent(),
@@ -4468,6 +4612,7 @@ class GoalContributionsCompanion extends UpdateCompanion<GoalContribution> {
     this.amount = const Value.absent(),
     this.note = const Value.absent(),
     this.occurredAt = const Value.absent(),
+    this.walletId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   GoalContributionsCompanion.insert({
@@ -4482,6 +4627,7 @@ class GoalContributionsCompanion extends UpdateCompanion<GoalContribution> {
     required int amount,
     this.note = const Value.absent(),
     required DateTime occurredAt,
+    this.walletId = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        goalId = Value(goalId),
@@ -4499,6 +4645,7 @@ class GoalContributionsCompanion extends UpdateCompanion<GoalContribution> {
     Expression<int>? amount,
     Expression<String>? note,
     Expression<DateTime>? occurredAt,
+    Expression<String>? walletId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -4513,6 +4660,7 @@ class GoalContributionsCompanion extends UpdateCompanion<GoalContribution> {
       if (amount != null) 'amount': amount,
       if (note != null) 'note': note,
       if (occurredAt != null) 'occurred_at': occurredAt,
+      if (walletId != null) 'wallet_id': walletId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -4529,6 +4677,7 @@ class GoalContributionsCompanion extends UpdateCompanion<GoalContribution> {
     Value<int>? amount,
     Value<String>? note,
     Value<DateTime>? occurredAt,
+    Value<String?>? walletId,
     Value<int>? rowid,
   }) {
     return GoalContributionsCompanion(
@@ -4543,6 +4692,7 @@ class GoalContributionsCompanion extends UpdateCompanion<GoalContribution> {
       amount: amount ?? this.amount,
       note: note ?? this.note,
       occurredAt: occurredAt ?? this.occurredAt,
+      walletId: walletId ?? this.walletId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -4583,6 +4733,9 @@ class GoalContributionsCompanion extends UpdateCompanion<GoalContribution> {
     if (occurredAt.present) {
       map['occurred_at'] = Variable<DateTime>(occurredAt.value);
     }
+    if (walletId.present) {
+      map['wallet_id'] = Variable<String>(walletId.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -4603,6 +4756,7 @@ class GoalContributionsCompanion extends UpdateCompanion<GoalContribution> {
           ..write('amount: $amount, ')
           ..write('note: $note, ')
           ..write('occurredAt: $occurredAt, ')
+          ..write('walletId: $walletId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -7952,6 +8106,7 @@ typedef $$BudgetsTableCreateCompanionBuilder = BudgetsCompanion Function({
   required String categoryId,
   required DateTime month,
   required int limitAmount,
+  Value<bool> isShared,
   Value<int> rowid,
 });
 typedef $$BudgetsTableUpdateCompanionBuilder = BudgetsCompanion Function({
@@ -7965,6 +8120,7 @@ typedef $$BudgetsTableUpdateCompanionBuilder = BudgetsCompanion Function({
   Value<String> categoryId,
   Value<DateTime> month,
   Value<int> limitAmount,
+  Value<bool> isShared,
   Value<int> rowid,
 });
 
@@ -8024,6 +8180,11 @@ class $$BudgetsTableFilterComposer
 
   ColumnFilters<int> get limitAmount => $composableBuilder(
     column: $table.limitAmount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isShared => $composableBuilder(
+    column: $table.isShared,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -8086,6 +8247,11 @@ class $$BudgetsTableOrderingComposer
     column: $table.limitAmount,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get isShared => $composableBuilder(
+    column: $table.isShared,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$BudgetsTableAnnotationComposer
@@ -8132,6 +8298,9 @@ class $$BudgetsTableAnnotationComposer
     column: $table.limitAmount,
     builder: (column) => column,
   );
+
+  GeneratedColumn<bool> get isShared =>
+      $composableBuilder(column: $table.isShared, builder: (column) => column);
 }
 
 class $$BudgetsTableTableManager
@@ -8172,6 +8341,7 @@ class $$BudgetsTableTableManager
                 Value<String> categoryId = const Value.absent(),
                 Value<DateTime> month = const Value.absent(),
                 Value<int> limitAmount = const Value.absent(),
+                Value<bool> isShared = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => BudgetsCompanion(
                 id: id,
@@ -8184,6 +8354,7 @@ class $$BudgetsTableTableManager
                 categoryId: categoryId,
                 month: month,
                 limitAmount: limitAmount,
+                isShared: isShared,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -8198,6 +8369,7 @@ class $$BudgetsTableTableManager
                 required String categoryId,
                 required DateTime month,
                 required int limitAmount,
+                Value<bool> isShared = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => BudgetsCompanion.insert(
                 id: id,
@@ -8210,6 +8382,7 @@ class $$BudgetsTableTableManager
                 categoryId: categoryId,
                 month: month,
                 limitAmount: limitAmount,
+                isShared: isShared,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -8258,6 +8431,7 @@ typedef $$GoalsTableCreateCompanionBuilder = GoalsCompanion Function({
   required int color,
   Value<DateTime?> achievedAt,
   Value<bool> archived,
+  Value<bool> isShared,
   Value<int> rowid,
 });
 typedef $$GoalsTableUpdateCompanionBuilder = GoalsCompanion Function({
@@ -8275,6 +8449,7 @@ typedef $$GoalsTableUpdateCompanionBuilder = GoalsCompanion Function({
   Value<int> color,
   Value<DateTime?> achievedAt,
   Value<bool> archived,
+  Value<bool> isShared,
   Value<int> rowid,
 });
 
@@ -8353,6 +8528,11 @@ class $$GoalsTableFilterComposer extends Composer<_$AppDatabase, $GoalsTable> {
 
   ColumnFilters<bool> get archived => $composableBuilder(
     column: $table.archived,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isShared => $composableBuilder(
+    column: $table.isShared,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -8435,6 +8615,11 @@ class $$GoalsTableOrderingComposer
     column: $table.archived,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get isShared => $composableBuilder(
+    column: $table.isShared,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$GoalsTableAnnotationComposer
@@ -8493,6 +8678,9 @@ class $$GoalsTableAnnotationComposer
 
   GeneratedColumn<bool> get archived =>
       $composableBuilder(column: $table.archived, builder: (column) => column);
+
+  GeneratedColumn<bool> get isShared =>
+      $composableBuilder(column: $table.isShared, builder: (column) => column);
 }
 
 class $$GoalsTableTableManager
@@ -8537,6 +8725,7 @@ class $$GoalsTableTableManager
                 Value<int> color = const Value.absent(),
                 Value<DateTime?> achievedAt = const Value.absent(),
                 Value<bool> archived = const Value.absent(),
+                Value<bool> isShared = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => GoalsCompanion(
                 id: id,
@@ -8553,6 +8742,7 @@ class $$GoalsTableTableManager
                 color: color,
                 achievedAt: achievedAt,
                 archived: archived,
+                isShared: isShared,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -8571,6 +8761,7 @@ class $$GoalsTableTableManager
                 required int color,
                 Value<DateTime?> achievedAt = const Value.absent(),
                 Value<bool> archived = const Value.absent(),
+                Value<bool> isShared = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => GoalsCompanion.insert(
                 id: id,
@@ -8587,6 +8778,7 @@ class $$GoalsTableTableManager
                 color: color,
                 achievedAt: achievedAt,
                 archived: archived,
+                isShared: isShared,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -8633,6 +8825,7 @@ typedef $$GoalContributionsTableCreateCompanionBuilder =
       required int amount,
       Value<String> note,
       required DateTime occurredAt,
+      Value<String?> walletId,
       Value<int> rowid,
     });
 typedef $$GoalContributionsTableUpdateCompanionBuilder =
@@ -8648,6 +8841,7 @@ typedef $$GoalContributionsTableUpdateCompanionBuilder =
       Value<int> amount,
       Value<String> note,
       Value<DateTime> occurredAt,
+      Value<String?> walletId,
       Value<int> rowid,
     });
 
@@ -8712,6 +8906,11 @@ class $$GoalContributionsTableFilterComposer
 
   ColumnFilters<DateTime> get occurredAt => $composableBuilder(
     column: $table.occurredAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get walletId => $composableBuilder(
+    column: $table.walletId,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -8779,6 +8978,11 @@ class $$GoalContributionsTableOrderingComposer
     column: $table.occurredAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get walletId => $composableBuilder(
+    column: $table.walletId,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$GoalContributionsTableAnnotationComposer
@@ -8826,6 +9030,9 @@ class $$GoalContributionsTableAnnotationComposer
     column: $table.occurredAt,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get walletId =>
+      $composableBuilder(column: $table.walletId, builder: (column) => column);
 }
 
 class $$GoalContributionsTableTableManager
@@ -8879,6 +9086,7 @@ class $$GoalContributionsTableTableManager
                 Value<int> amount = const Value.absent(),
                 Value<String> note = const Value.absent(),
                 Value<DateTime> occurredAt = const Value.absent(),
+                Value<String?> walletId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => GoalContributionsCompanion(
                 id: id,
@@ -8892,6 +9100,7 @@ class $$GoalContributionsTableTableManager
                 amount: amount,
                 note: note,
                 occurredAt: occurredAt,
+                walletId: walletId,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -8907,6 +9116,7 @@ class $$GoalContributionsTableTableManager
                 required int amount,
                 Value<String> note = const Value.absent(),
                 required DateTime occurredAt,
+                Value<String?> walletId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => GoalContributionsCompanion.insert(
                 id: id,
@@ -8920,6 +9130,7 @@ class $$GoalContributionsTableTableManager
                 amount: amount,
                 note: note,
                 occurredAt: occurredAt,
+                walletId: walletId,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

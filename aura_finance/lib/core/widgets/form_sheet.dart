@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../icons/category_icons.dart';
@@ -241,4 +242,88 @@ Widget iconLabel(BuildContext context, HugeIconData icon, String text) {
       Text(text, style: AuraType.bodySm.copyWith(color: p.onSurfaceVariant)),
     ],
   );
+}
+
+/// Sakelar Bersama/Pribadi untuk dompet, target & budget.
+/// Data yang sudah dibagikan tidak bisa ditarik jadi pribadi lagi (salinannya sudah
+/// ada di HP anggota lain), jadi sakelar dikunci pada kondisi itu.
+class ShareToggle extends StatelessWidget {
+  const ShareToggle({
+    super.key,
+    required this.title,
+    required this.value,
+    required this.onChanged,
+    this.sharedHint = 'Terlihat & bisa diubah semua anggota rumah tangga',
+    this.privateHint = 'Hanya terlihat olehmu',
+    this.locked = false,
+  });
+  final String title;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final String sharedHint;
+  final String privateHint;
+  final bool locked;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.aura;
+    return Padding(
+      padding: const EdgeInsets.only(top: AuraSpace.md),
+      child: Row(
+        children: [
+          AuraIcon(value ? HugeIcons.strokeRoundedUserGroup : HugeIcons.strokeRoundedLockKey, size: 20, color: p.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: AuraType.labelLg.copyWith(color: p.onSurface)),
+                Text(
+                  locked ? 'Sudah dibagikan — tidak bisa dijadikan pribadi lagi' : (value ? sharedHint : privateHint),
+                  style: AuraType.bodySm.copyWith(color: p.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          ShadSwitch(value: value, onChanged: locked ? null : onChanged),
+        ],
+      ),
+    );
+  }
+}
+
+/// Label kecil "Bersama" (dengan avatar anggota) atau "Pribadi".
+class ShareBadge extends StatelessWidget {
+  const ShareBadge({super.key, required this.shared, this.avatars = const []});
+  final bool shared;
+  final List<Widget> avatars;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.aura;
+    return Container(
+      padding: EdgeInsets.fromLTRB(avatars.isEmpty ? 8 : 3, 3, 8, 3),
+      decoration: BoxDecoration(
+        color: shared ? p.primaryFixed : p.surfaceHigh,
+        borderRadius: BorderRadius.circular(AuraRadius.pill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (shared && avatars.isNotEmpty)
+            SizedBox(
+              width: 18.0 + (avatars.length - 1) * 12,
+              height: 18,
+              child: Stack(
+                children: [for (final (i, a) in avatars.indexed) Positioned(left: i * 12.0, child: a)],
+              ),
+            )
+          else
+            AuraIcon(shared ? HugeIcons.strokeRoundedUserGroup : HugeIcons.strokeRoundedLockKey, size: 13, color: shared ? p.onPrimaryFixed : p.onSurfaceVariant),
+          const SizedBox(width: 5),
+          Text(shared ? 'Bersama' : 'Pribadi', style: AuraType.labelSm.copyWith(color: shared ? p.onPrimaryFixed : p.onSurfaceVariant, letterSpacing: 0)),
+        ],
+      ),
+    );
+  }
 }

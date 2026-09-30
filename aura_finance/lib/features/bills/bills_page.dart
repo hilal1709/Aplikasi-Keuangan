@@ -127,11 +127,15 @@ class _BillTile extends ConsumerWidget {
     HapticFeedback.heavyImpact();
     await ref.read(notificationsProvider).rescheduleBills();
     final who = ref.read(displayNameProvider).trim().split(' ').first;
-    ref.read(realtimeProvider.notifier).notify(
-          kind: 'bill',
-          title: 'Tagihan ${bill.name} lunas',
-          body: '${Rupiah.format(bill.amount)}${who.isEmpty ? '' : ' · dibayar $who'}',
-        );
+    // Tagihan yang dibayar dari dompet pribadi tidak dikabarkan ke pasangan.
+    final walletShared = bill.walletId == null || (ref.read(walletMapProvider)[bill.walletId]?.wallet.isShared ?? false);
+    if (walletShared) {
+      ref.read(realtimeProvider.notifier).notify(
+            kind: 'bill',
+            title: 'Tagihan ${bill.name} lunas',
+            body: '${Rupiah.format(bill.amount)}${who.isEmpty ? '' : ' · dibayar $who'}',
+          );
+    }
     if (context.mounted) {
       AuraToast.success(
         context,

@@ -66,6 +66,10 @@ class Budgets extends Table with Syncable {
   /// Awal bulan (tanggal 1, 00:00).
   DateTimeColumn get month => dateTime()();
   IntColumn get limitAmount => integer()();
+
+  /// Bersama = menghitung pengeluaran dompet bersama & terlihat semua anggota.
+  /// Pribadi = hanya pembuatnya, menghitung pengeluaran dompet pribadinya.
+  BoolColumn get isShared => boolean().withDefault(const Constant(true))();
 }
 
 class Goals extends Table with Syncable {
@@ -78,6 +82,9 @@ class Goals extends Table with Syncable {
   IntColumn get color => integer()();
   DateTimeColumn get achievedAt => dateTime().nullable()();
   BoolColumn get archived => boolean().withDefault(const Constant(false))();
+
+  /// Bersama = semua anggota bisa melihat & menyetor. Pribadi = hanya pembuatnya.
+  BoolColumn get isShared => boolean().withDefault(const Constant(true))();
 }
 
 class GoalContributions extends Table with Syncable {
@@ -87,6 +94,9 @@ class GoalContributions extends Table with Syncable {
   IntColumn get amount => integer()();
   TextColumn get note => text().withDefault(const Constant(''))();
   DateTimeColumn get occurredAt => dateTime()();
+
+  /// Dompet sumber setoran (atau tujuan penarikan). Null = tidak memengaruhi saldo dompet.
+  TextColumn get walletId => text().nullable()();
 }
 
 class RecurringRules extends Table with Syncable {
