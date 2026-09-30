@@ -133,6 +133,26 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
     if (mounted) Navigator.of(context).pop();
   }
 
+  Future<void> _delete() async {
+    final e = widget.existing!;
+    final db = ref.read(dbProvider);
+    final n = await db.countTxForCategory(e.id);
+    if (!mounted) return;
+    final ok = await confirmDelete(
+      context,
+      title: 'Hapus kategori ${e.name}?',
+      message: n == 0
+          ? 'Budget untuk kategori ini juga akan dihapus.'
+          : '$n transaksi tetap ada tetapi menjadi "Tanpa kategori". Budget kategori ini ikut dihapus.',
+    );
+    if (!ok) return;
+    await db.softDeleteCategory(e.id);
+    if (mounted) {
+      AuraToast.success(context, 'Kategori dihapus');
+      Navigator.of(context).pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = context.aura;
@@ -170,7 +190,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
         const FieldLabel('Warna'),
         ToneSwatches(value: _color, onChanged: (c) => setState(() => _color = c)),
         PrimaryAction(label: 'Simpan', onPressed: _save),
-        if (widget.existing != null) PrimaryAction(label: 'Arsipkan kategori', destructive: true, onPressed: () => _save(archive: true)),
+        if (widget.existing != null) PrimaryAction(label: 'Hapus kategori', destructive: true, onPressed: _delete),
       ],
     );
   }

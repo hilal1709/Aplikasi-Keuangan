@@ -49,6 +49,10 @@ class NeonAuth {
   static const _kCookie = 'neon_session_cookie';
   static const _kUser = 'neon_user';
 
+  /// Better Auth mewajibkan header Origin (browser mengirimnya otomatis).
+  /// Proyek Neon mengizinkan localhost, jadi aplikasi mengaku sebagai origin itu.
+  static const _origin = {'Origin': 'http://localhost'};
+
   final _userCtrl = StreamController<NeonUser?>.broadcast();
   String? _cookie;
   NeonUser? _user;
@@ -75,7 +79,7 @@ class NeonAuth {
       _authPost('sign-in/email', {'email': email, 'password': password});
 
   Future<NeonUser> _authPost(String path, Map<String, dynamic> body) async {
-    final res = await http.post(_u(path), headers: {'Content-Type': 'application/json'}, body: jsonEncode(body));
+    final res = await http.post(_u(path), headers: {'Content-Type': 'application/json', ..._origin}, body: jsonEncode(body));
     final json = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode >= 400) {
       throw NeonAuthException((json['message'] as String?) ?? (json['code'] as String?) ?? 'Gagal (${res.statusCode})', status: res.statusCode);
@@ -114,7 +118,7 @@ class NeonAuth {
 
   Future<String> _fetchJwt() async {
     if (_cookie == null) throw NeonAuthException('Belum masuk', status: 401);
-    final res = await http.get(_u('token'), headers: {'Cookie': _cookie!});
+    final res = await http.get(_u('token'), headers: {'Cookie': _cookie!, ..._origin});
     if (res.statusCode == 401) {
       await signOut();
       throw NeonAuthException('Sesi berakhir, silakan masuk lagi', status: 401);
@@ -146,7 +150,7 @@ class NeonAuth {
     await _storage.delete(key: _kUser);
     _userCtrl.add(null);
     if (cookie != null) {
-      unawaited(http.post(_u('sign-out'), headers: {'Cookie': cookie, 'Content-Type': 'application/json'}, body: '{}').catchError((_) => http.Response('', 0)));
+      unawaited(http.post(_u('sign-out'), headers: {'Cookie': cookie, 'Content-Type': 'application/json', ..._origin}, body: '{}').catchError((_) => http.Response('', 0)));
     }
   }
 }

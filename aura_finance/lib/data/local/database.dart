@@ -88,6 +88,33 @@ class AppDatabase extends _$AppDatabase {
 
   WalletsCompanion _touchWallet(WalletsCompanion w) => w.copyWith(updatedAt: Value(DateTime.now()), dirty: const Value(true));
 
+  Future<int> countTxForWallet(String walletId) async {
+    final r = await customSelect(
+      'SELECT COUNT(*) AS n FROM tx_entries WHERE deleted_at IS NULL AND (wallet_id = ? OR to_wallet_id = ?)',
+      variables: [Variable.withString(walletId), Variable.withString(walletId)],
+    ).getSingle();
+    return r.read<int>('n');
+  }
+
+  /// Hapus dompet (soft delete). Jika [withTransactions], transaksi yang
+  /// melibatkan dompet ini ikut dihapus supaya saldo dompet lain tetap benar.
+  Future<void> softDeleteWallet(String id, {bool withTransactions = false}) => transaction(() async {
+        final now = DateTime.now();
+        if (withTransactions) {
+          await customUpdate(
+            'UPDATE tx_entries SET deleted_at = ?, updated_at = ?, dirty = 1 WHERE deleted_at IS NULL AND (wallet_id = ? OR to_wallet_id = ?)',
+            variables: [Variable.withDateTime(now), Variable.withDateTime(now), Variable.withString(id), Variable.withString(id)],
+            updates: {txEntries},
+          );
+          await customUpdate(
+            'UPDATE recurring_rules SET deleted_at = ?, updated_at = ?, dirty = 1 WHERE deleted_at IS NULL AND wallet_id = ?',
+            variables: [Variable.withDateTime(now), Variable.withDateTime(now), Variable.withString(id)],
+            updates: {recurringRules},
+          );
+        }
+        await _softDelete(wallets, id);
+      });
+
   // ---------------------------------------------------------------------------
   // Kategori
 
@@ -98,6 +125,26 @@ class AppDatabase extends _$AppDatabase {
     if (kind != null) q.where((c) => c.kind.equalsValue(kind));
     return q.watch();
   }
+
+  Future<int> countTxForCategory(String categoryId) async {
+    final r = await customSelect(
+      'SELECT COUNT(*) AS n FROM tx_entries WHERE deleted_at IS NULL AND category_id = ?',
+      variables: [Variable.withString(categoryId)],
+    ).getSingle();
+    return r.read<int>('n');
+  }
+
+  /// Hapus kategori. Transaksinya tetap ada (tampil sebagai "Tanpa kategori"),
+  /// budget untuk kategori ini ikut dihapus.
+  Future<void> softDeleteCategory(String id) => transaction(() async {
+        final now = DateTime.now();
+        await customUpdate(
+          'UPDATE budgets SET deleted_at = ?, updated_at = ?, dirty = 1 WHERE deleted_at IS NULL AND category_id = ?',
+          variables: [Variable.withDateTime(now), Variable.withDateTime(now), Variable.withString(id)],
+          updates: {budgets},
+        );
+        await _softDelete(categories, id);
+      });
 
   Future<void> upsertCategory(CategoriesCompanion c) =>
       into(categories).insertOnConflictUpdate(c.copyWith(updatedAt: Value(DateTime.now()), dirty: const Value(true)));

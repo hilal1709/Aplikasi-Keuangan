@@ -91,6 +91,33 @@ void main() {
       expect(totals.expense, 200000); // transfer bukan pengeluaran
     });
 
+    test('hapus dompet beserta transaksinya menjaga saldo dompet lain', () async {
+      await db.upsertWallet(WalletsCompanion.insert(id: 'a', name: 'BCA', kind: WalletKind.bank, color: 0, initialBalance: const Value(1000)));
+      await db.upsertWallet(WalletsCompanion.insert(id: 'b', name: 'Tunai', kind: WalletKind.cash, color: 0));
+      final now = DateTime.now();
+      await db.upsertTx(TxEntriesCompanion.insert(id: 't1', kind: TxKind.transfer, amount: 300, walletId: 'a', toWalletId: const Value('b'), occurredAt: now));
+      await db.upsertTx(TxEntriesCompanion.insert(id: 't2', kind: TxKind.expense, amount: 50, walletId: 'a', occurredAt: now));
+      expect(await db.countTxForWallet('b'), 1);
+
+      await db.softDeleteWallet('b', withTransactions: true);
+      final balances = {for (final w in await db.watchWalletBalances().first) w.wallet.id: w.balance};
+      expect(balances.containsKey('b'), isFalse);
+      expect(balances['a'], 1000 - 50); // transfer ke dompet terhapus ikut hilang
+    });
+
+    test('hapus kategori: transaksi tetap, budget ikut terhapus', () async {
+      await db.upsertWallet(WalletsCompanion.insert(id: 'a', name: 'BCA', kind: WalletKind.bank, color: 0));
+      final cat = (await db.watchCategories(kind: CategoryKind.expense).first).first;
+      final month = DateTime(2026, 9);
+      await db.upsertTx(TxEntriesCompanion.insert(id: 't1', kind: TxKind.expense, amount: 70, walletId: 'a', categoryId: Value(cat.id), occurredAt: DateTime(2026, 9, 5)));
+      await db.upsertBudget(BudgetsCompanion.insert(id: 'b1', categoryId: cat.id, month: month, limitAmount: 100));
+
+      await db.softDeleteCategory(cat.id);
+      expect((await db.watchCategories().first).any((c) => c.id == cat.id), isFalse);
+      expect(await db.watchBudgets(month).first, isEmpty);
+      expect((await db.watchTx().first).single.categoryId, cat.id);
+    });
+
     test('kategori bawaan terisi saat database dibuat', () async {
       final cats = await db.watchCategories().first;
       expect(cats.where((c) => c.kind == CategoryKind.expense), isNotEmpty);

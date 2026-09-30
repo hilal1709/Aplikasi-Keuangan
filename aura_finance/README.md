@@ -56,10 +56,10 @@ memeriksa JWT dan menegakkan Row Level Security).
    Setelah itu klik **Refresh schema cache** di halaman Data API.
 5. Salin dua alamat: *Data API URL* (`https://ep-…apirest….neon.tech/neondb/rest/v1`)
    dan *Auth URL* (`https://ep-…neonauth….neon.tech/neondb/auth`).
-6. Jalankan:
+6. Isi alamat tadi di `config/app.json`, lalu jalankan:
 
 ```bash
-flutter run --dart-define=NEON_DATA_API_URL=https://ep-xxx.apirest.REGION.aws.neon.tech/neondb/rest/v1 --dart-define=NEON_AUTH_URL=https://ep-xxx.neonauth.REGION.aws.neon.tech/neondb/auth
+flutter run --dart-define-from-file=config/app.json
 ```
 
 Kedua alamat ini bukan rahasia; tanpa login yang valid tidak ada data yang bisa dibaca.
@@ -95,10 +95,10 @@ npx wrangler secret put BEAMS_SECRET_KEY
 npx wrangler deploy
 ```
 
-5. Jalankan aplikasi dengan nilai publiknya:
+5. Isi `AURA_API_URL` (URL worker) dan `BEAMS_INSTANCE_ID` di `config/app.json`, lalu:
 
 ```bash
-flutter run --dart-define=NEON_DATA_API_URL=... --dart-define=NEON_AUTH_URL=... --dart-define=AURA_API_URL=https://aura-api.AKUN.workers.dev --dart-define=PUSHER_KEY=... --dart-define=PUSHER_CLUSTER=ap1 --dart-define=BEAMS_INSTANCE_ID=...
+flutter run --dart-define-from-file=config/app.json
 ```
 
 Tanpa `google-services.json`, aplikasi tetap dibangun; push dimatikan tetapi realtime (Channels) tetap jalan.

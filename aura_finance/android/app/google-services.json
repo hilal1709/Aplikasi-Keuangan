@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "280804104544",
+    "project_id": "aplikasi-keuangan-ac12b",
+    "storage_bucket": "aplikasi-keuangan-ac12b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:280804104544:android:357c7bad88b3276b5f2605",
+        "android_client_info": {
+          "package_name": "com.aurafinance.aura_finance"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCp2NURFPzzxsLk3c4vwazqerq5Z_Pidl4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

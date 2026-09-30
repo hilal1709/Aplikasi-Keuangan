@@ -9,6 +9,7 @@ import 'package:hugeicons/hugeicons.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../core/widgets/feedback.dart';
+import '../../core/widgets/form_sheet.dart';
 import '../../core/icons/category_icons.dart';
 import '../../core/illustrations/clay.dart';
 import '../../core/theme/app_theme.dart';
@@ -119,6 +120,29 @@ class _AddTxSheetState extends ConsumerState<AddTxSheet> {
     setState(() => _saved = true);
     await Future<void>.delayed(const Duration(milliseconds: 650));
     if (mounted) Navigator.of(context).pop();
+  }
+
+  Future<void> _delete() async {
+    final tx = widget.existing!;
+    final ok = await confirmDelete(
+      context,
+      title: 'Hapus transaksi ini?',
+      message: '${Rupiah.format(tx.amount)}${tx.note.isEmpty ? '' : ' · ${tx.note}'} akan dihapus dari riwayat dan saldo dompet.',
+    );
+    if (!ok || !mounted) return;
+    final db = ref.read(dbProvider);
+    await db.softDeleteTx(tx.id);
+    if (!mounted) return;
+    final nav = Navigator.of(context);
+    AuraToast.show(
+      context,
+      title: 'Transaksi dihapus',
+      tone: AuraTone.warning,
+      actionLabel: 'Urungkan',
+      onAction: () => db.restoreTx(tx.id),
+      duration: const Duration(seconds: 5),
+    );
+    nav.pop();
   }
 
   Future<void> _pickDate() async {
@@ -237,6 +261,15 @@ class _AddTxSheetState extends ConsumerState<AddTxSheet> {
                       _Keypad(onKey: _press),
                       const SizedBox(height: AuraSpace.md),
                       _SaveButton(saved: _saved, color: accent, onTap: _saved ? null : _save, editing: widget.existing != null),
+                      if (widget.existing != null && !_saved)
+                        Center(
+                          child: TextButton.icon(
+                            onPressed: _delete,
+                            style: TextButton.styleFrom(foregroundColor: p.error, textStyle: AuraType.labelLg),
+                            icon: AuraIcon(HugeIcons.strokeRoundedDelete02, size: 18, color: p.error),
+                            label: const Text('Hapus transaksi'),
+                          ),
+                        ),
                     ],
                   ),
                 ),

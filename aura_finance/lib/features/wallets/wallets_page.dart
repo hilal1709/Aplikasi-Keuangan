@@ -222,16 +222,33 @@ class _WalletFormState extends ConsumerState<_WalletForm> {
     if (mounted) Navigator.of(context).pop();
   }
 
-  Future<void> _archive() async {
+  /// Dompet kosong langsung dihapus; dompet bertransaksi diberi pilihan
+  /// "arsipkan saja" (riwayat aman) atau "hapus beserta transaksinya".
+  Future<void> _delete() async {
     final e = widget.existing!;
-    final ok = await confirmDelete(
+    final db = ref.read(dbProvider);
+    final n = await db.countTxForWallet(e.id);
+    if (!mounted) return;
+    final choice = await showAuraModal<String>(
       context,
-      title: 'Arsipkan dompet?',
-      message: 'Dompet disembunyikan dari daftar. Riwayat transaksinya tetap tersimpan.',
-      confirmLabel: 'Arsipkan',
+      title: 'Hapus dompet ${e.name}?',
+      message: n == 0
+          ? 'Dompet ini belum punya transaksi.'
+          : 'Dompet ini punya $n transaksi. Arsipkan saja agar riwayat & laporan tetap utuh, atau hapus beserta transaksinya.',
+      actions: [
+        const AuraModalAction('Batal'),
+        if (n > 0) const AuraModalAction('Arsipkan', value: 'archive', primary: true),
+        AuraModalAction(n > 0 ? 'Hapus semua' : 'Hapus', value: 'delete', destructive: true),
+      ],
     );
-    if (!ok) return;
-    await ref.read(dbProvider).upsertWallet(e.toCompanion(true).copyWith(archived: const Value(true)));
+    if (choice == null || !mounted) return;
+    if (choice == 'archive') {
+      await db.upsertWallet(e.toCompanion(true).copyWith(archived: const Value(true)));
+      if (mounted) AuraToast.success(context, 'Dompet diarsipkan', message: 'Riwayat transaksinya tetap tersimpan.');
+    } else {
+      await db.softDeleteWallet(e.id, withTransactions: true);
+      if (mounted) AuraToast.success(context, 'Dompet dihapus', message: n > 0 ? '$n transaksi ikut dihapus.' : null);
+    }
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -290,7 +307,7 @@ class _WalletFormState extends ConsumerState<_WalletForm> {
           ],
         ),
         PrimaryAction(label: 'Simpan', onPressed: _save),
-        if (widget.existing != null) PrimaryAction(label: 'Arsipkan dompet', destructive: true, onPressed: _archive),
+        if (widget.existing != null) PrimaryAction(label: 'Hapus dompet', destructive: true, onPressed: _delete),
       ],
     );
   }
