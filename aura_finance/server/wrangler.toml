@@ -1,0 +1,13 @@
+name = "aura-api"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# Nilai publik (boleh di-commit). Secret di-set lewat `npx wrangler secret put ...`:
+#   PUSHER_SECRET, BEAMS_SECRET_KEY
+[vars]
+NEON_AUTH_URL = "https://ep-lively-term-b4qk2lr9.neonauth.c-6.us-east-2.aws.neon.tech/neondb/auth"
+NEON_DATA_API_URL = "https://ep-lively-term-b4qk2lr9.apirest.c-6.us-east-2.aws.neon.tech/neondb/rest/v1"
+PUSHER_APP_ID = ""
+PUSHER_KEY = ""
+PUSHER_CLUSTER = "ap1"
+BEAMS_INSTANCE_ID = ""
