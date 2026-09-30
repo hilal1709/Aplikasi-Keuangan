@@ -125,7 +125,8 @@ async function publishToUsers(env, users, title, body, data) {
       fcm: { notification: { title, body }, data },
     }),
   });
-  if (!res.ok) console.log('beams publish failed', res.status, await res.text());
+  const text = await res.text();
+  console.log('beams publish', res.status, users.length, 'user(s)', text.slice(0, 300));
 }
 
 // --- Rute ------------------------------------------------------------------------------
@@ -157,6 +158,7 @@ async function handle(request, env, ctx) {
       .setIssuer(`https://${env.BEAMS_INSTANCE_ID}.pushnotifications.pusher.com`)
       .setExpirationTime('24h')
       .sign(enc.encode(env.BEAMS_SECRET_KEY));
+    console.log('beams token issued');
     return json({ token });
   }
 

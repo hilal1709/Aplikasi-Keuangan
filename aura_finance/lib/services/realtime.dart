@@ -115,12 +115,26 @@ class RealtimeController extends Notifier<bool> {
         status.set(const PushStatus(error: 'Firebase tidak aktif di aplikasi ini'));
         return;
       }
-      await _beams.invokeMethod('setUser', {
-        'userId': userId,
-        'tokenUrl': '${RealtimeConfig.apiUrl}/beams/token',
-        'jwt': await Neon.auth.accessToken(),
-      });
+      // Beams butuh token FCM dulu; bila macet di sini, tampilkan alasannya.
+      try {
+        await _beams.invokeMethod<String>('fcmToken').timeout(const Duration(seconds: 20));
+      } on TimeoutException {
+        status.set(const PushStatus(error: 'Firebase tidak merespons (cek Google Play Services & koneksi)'));
+        return;
+      } on PlatformException catch (e) {
+        status.set(PushStatus(error: 'Firebase: ${e.message ?? e.code}'));
+        return;
+      }
+      await _beams
+          .invokeMethod('setUser', {
+            'userId': userId,
+            'tokenUrl': '${RealtimeConfig.apiUrl}/beams/token',
+            'jwt': await Neon.auth.accessToken(),
+          })
+          .timeout(const Duration(seconds: 30));
       status.set(const PushStatus(registered: true));
+    } on TimeoutException {
+      status.set(const PushStatus(error: 'Pusher Beams tidak merespons saat mendaftarkan HP'));
     } catch (e) {
       debugPrint('Pusher Beams gagal: $e');
       status.set(PushStatus(error: e is PlatformException ? (e.message ?? e.code) : '$e'));

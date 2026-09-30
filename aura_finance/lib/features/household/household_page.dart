@@ -633,6 +633,19 @@ class _NotificationCardState extends ConsumerState<_NotificationCard> with Widge
                     ? 'HP ini terdaftar untuk menerima kabar saat aplikasi tertutup.'
                     : 'Sedang mendaftarkan HP ini…',
           ),
+          if (!push.registered && enabled != false)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: ShadButton.link(
+                onPressed: () {
+                  final uid = ref.read(authUserProvider).value?.id;
+                  if (uid == null) return;
+                  ref.read(pushStatusProvider.notifier).set(const PushStatus());
+                  ref.read(realtimeProvider.notifier).registerPush(uid);
+                },
+                child: const Text('Daftarkan ulang HP ini'),
+              ),
+            ),
           if (enabled == false)
             PrimaryAction(label: 'Aktifkan notifikasi', onPressed: _enable)
           else

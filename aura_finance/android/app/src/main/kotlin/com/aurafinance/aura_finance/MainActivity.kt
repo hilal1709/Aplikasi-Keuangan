@@ -6,6 +6,7 @@ import android.os.Handler
 import android.provider.Settings
 import android.os.Looper
 import com.google.firebase.FirebaseApp
+import com.google.firebase.messaging.FirebaseMessaging
 import com.pusher.pushnotifications.BeamsCallback
 import com.pusher.pushnotifications.PushNotifications
 import com.pusher.pushnotifications.PusherCallbackError
@@ -33,6 +34,19 @@ class MainActivity : FlutterFragmentActivity() {
                         } else {
                             PushNotifications.start(applicationContext, call.argument<String>("instanceId")!!)
                             result.success(true)
+                        }
+                    }
+                    // Diagnosa: ambil token FCM langsung. Beams baru bisa mendaftarkan HP setelah ini berhasil.
+                    "fcmToken" -> {
+                        if (FirebaseApp.getApps(this).isEmpty() && FirebaseApp.initializeApp(this) == null) {
+                            result.error("fcm", "Firebase tidak terpasang", null)
+                        } else {
+                            FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+                                main.post {
+                                    if (task.isSuccessful) result.success(task.result)
+                                    else result.error("fcm", task.exception?.message ?: "gagal mengambil token FCM", null)
+                                }
+                            }
                         }
                     }
                     "setUser" -> {
