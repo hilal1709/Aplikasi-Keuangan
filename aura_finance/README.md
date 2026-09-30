@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/brand/logo.png" width="140" alt="Logo Aura"></p>
+
 # Aura — pencatat keuangan pribadi & keluarga
 
 Aplikasi Android (Flutter) untuk mencatat keuangan secara manual — tanpa sambungan ke bank.

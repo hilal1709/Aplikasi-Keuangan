@@ -97,6 +97,8 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               padding: const EdgeInsets.fromLTRB(AuraSpace.margin, AuraSpace.md, AuraSpace.margin, 0),
               child: Row(
                 children: [
+                  Image.asset('assets/brand/logo_mark.png', width: 34, height: 34),
+                  const SizedBox(width: AuraSpace.xs),
                   Text('Aura', style: AuraType.headlineSm.copyWith(color: p.primary, fontWeight: FontWeight.w800)),
                   const Spacer(),
                   if (!isSetup)
